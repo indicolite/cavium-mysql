@@ -190,6 +190,8 @@ read_view_create_low(
 		mem_heap_alloc(
 			heap, sizeof(*view) + n * sizeof(*view->trx_ids)));
 
+	UNIV_PREFETCH_RW(view);
+
 	view->n_trx_ids = n;
 	view->trx_ids = (trx_id_t*) &view[1];
 

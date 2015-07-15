@@ -2145,12 +2145,16 @@ trx_get_trx_by_xid_low(
 					identifier */
 {
 	trx_t*		trx;
+	trx_t*		next;
 
 	ut_ad(mutex_own(&trx_sys->mutex));
 
 	for (trx = UT_LIST_GET_FIRST(trx_sys->rw_trx_list);
 	     trx != NULL;
-	     trx = UT_LIST_GET_NEXT(trx_list, trx)) {
+	     trx = next) {
+
+		next = UT_LIST_GET_NEXT(trx_list, trx);
+		UNIV_PREFETCH_R(next);
 
 		assert_trx_in_rw_list(trx);
 

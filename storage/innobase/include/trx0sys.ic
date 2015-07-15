@@ -242,56 +242,26 @@ trx_get_rw_trx_by_id(
 	trx_id_t	trx_id)	/*!< in: trx id to search for */
 {
 	trx_t*		trx;
-	ulint		len;
-	trx_t*		first;
+	trx_t*		next;
 
 	ut_ad(mutex_own(&trx_sys->mutex));
 
-	len = UT_LIST_GET_LEN(trx_sys->rw_trx_list);
+	for (trx = UT_LIST_GET_FIRST(trx_sys->rw_trx_list);
+	     trx != NULL;
+	     trx = next)
+	{
+		next = UT_LIST_GET_NEXT(trx_list, trx);
 
-	if (len == 0) {
-		return(NULL);
-	}
+		UNIV_PREFETCH_R(next);
 
-	/* Because the list is ordered on trx id in descending order,
-	we try to speed things up a bit. */
-
-	trx = UT_LIST_GET_FIRST(trx_sys->rw_trx_list);
-	assert_trx_in_rw_list(trx);
-
-	if (trx_id == trx->id) {
-		return(trx);
-	} else if (len == 1 || trx_id > trx->id) {
-		return(NULL);
-	}
-
-	first = trx;
-
-	trx = UT_LIST_GET_LAST(trx_sys->rw_trx_list);
-	assert_trx_in_rw_list(trx);
-
-	if (trx_id == trx->id) {
-		return(trx);
-	} else if (len == 2 || trx_id < trx->id) {
-		return(NULL);
-	}
-
-	/* Search the list from the lower end (tail). */
-	if (trx_id < (first->id + trx->id) >> 1) {
-		for (trx = UT_LIST_GET_PREV(trx_list, trx);
-		     trx != NULL && trx_id > trx->id;
-		     trx = UT_LIST_GET_PREV(trx_list, trx)) {
-			assert_trx_in_rw_list(trx);
-		}
-	} else {
-		for (trx = UT_LIST_GET_NEXT(trx_list, first);
-		     trx != NULL && trx_id < trx->id;
-		     trx = UT_LIST_GET_NEXT(trx_list, trx)) {
-			assert_trx_in_rw_list(trx);
+		if (UNIV_UNLIKELY(trx->id < trx_id)) {
+			break;
+		} else if (UNIV_UNLIKELY(trx->id == trx_id)) {
+			return(trx);
 		}
 	}
 
-	return((trx != NULL && trx->id == trx_id) ? trx : NULL);
+	return(NULL);
 }
 
 /****************************************************************//**

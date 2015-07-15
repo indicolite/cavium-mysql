@@ -541,10 +541,25 @@ contains the sum of the following flag and the locally stored len. */
 # define UNIV_LIKELY_NULL(ptr) __builtin_expect((ulint) ptr, 0)
 /* Minimize cache-miss latency by moving data at addr into a cache before
 it is read. */
+#ifdef __aarch64__
+# define UNIV_PREFETCH_R(addr)		\
+        __asm__ __volatile__ (          \
+        "prfm   pldl1strm, %0\n"        \
+        : : "Q" (*(addr)))
+
+#else
 # define UNIV_PREFETCH_R(addr) __builtin_prefetch(addr, 0, 3)
+#endif
 /* Minimize cache-miss latency by moving data at addr into a cache before
 it is read or written. */
+#ifdef __aarch64__
+# define UNIV_PREFETCH_RW(addr)		\
+        __asm__ __volatile__ (          \
+        "prfm   pstl1strm, %0\n"        \
+        : : "Q" (*(addr)))
+#else
 # define UNIV_PREFETCH_RW(addr) __builtin_prefetch(addr, 1, 3)
+#endif
 
 /* Sun Studio includes sun_prefetch.h as of version 5.9 */
 #elif (defined(__SUNPRO_C) && __SUNPRO_C >= 0x590) \

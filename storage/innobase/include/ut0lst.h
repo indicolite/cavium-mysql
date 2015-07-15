@@ -355,11 +355,13 @@ ut_list_map(
 	Functor		functor)
 {
 	ulint		count = 0;
+	typename List::elem_type* next;
 
 	for (typename List::elem_type* elem = list.start;
 	     elem != 0;
-	     elem = (elem->*node).next, ++count) {
-
+	     elem = next, ++count) {
+		next = (elem->*node).next;
+		UNIV_PREFETCH_R(next);
 		functor(elem);
 	}
 
