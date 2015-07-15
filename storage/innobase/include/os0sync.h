@@ -432,11 +432,19 @@ amount to decrement. */
 /**********************************************************//**
 Returns the old value of *ptr, atomically sets *ptr to new_val */
 
+#ifdef __aarch64__
 # define os_atomic_test_and_set_byte(ptr, new_val) \
 	{ __asm__ volatile ("dsb ish" ::: "memory");  __sync_lock_test_and_set(ptr, (byte) new_val);  }
 
 # define os_atomic_test_and_set_ulint(ptr, new_val) \
 	{ __asm__ volatile ("dsb ish" ::: "memory");  __sync_lock_test_and_set(ptr, new_val); }
+#else
+# define os_atomic_test_and_set_byte(ptr, new_val) \
+	__sync_lock_test_and_set(ptr, (byte) new_val)
+
+# define os_atomic_test_and_set_ulint(ptr, new_val) \
+	__sync_lock_test_and_set(ptr, new_val)
+#endif
 
 #elif defined(HAVE_IB_SOLARIS_ATOMICS)
 
