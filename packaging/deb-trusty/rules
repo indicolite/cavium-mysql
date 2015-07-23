@@ -137,8 +137,8 @@ override_dh_auto_install:
 	mkdir -p debian/tmp/etc/mysql
 	install -o root -m 0644 debian/extra/my.cnf debian/tmp/etc/mysql
 	# add MySQL Server debug binary and library to package
-	install -o root -m 0755 debian/extra/server-binary debian/tmp/usr/sbin/mysqld-debug
-	install -o root -m 0755 debian/extra/embedded-server debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/libmysqld-debug.a
+#	install -o root -m 0755 debian/extra/server-binary debian/tmp/usr/sbin/mysqld-debug
+#	install -o root -m 0755 debian/extra/embedded-server debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/libmysqld-debug.a
 	# add apparmor profile
 	install -D -m 644 debian/extra/apparmor-profile debian/tmp/etc/apparmor.d/usr.sbin.mysqld
 	# add directory for legal docs
