@@ -22,8 +22,8 @@ usr/lib/*/libmysqlclient.so
 usr/lib/*/libmysqlservices.a
 usr/bin/mysql_config
 usr/bin/mysql_config_editor
-usr/share/man/man1/mysql_config.1
-usr/share/man/man1/mysql_config_editor.1
+#usr/share/man/man1/mysql_config.1
+#usr/share/man/man1/mysql_config_editor.1
 # legal
 usr/share/doc/libmysqlclient-dev/COPYING
 usr/share/doc/libmysqlclient-dev/README

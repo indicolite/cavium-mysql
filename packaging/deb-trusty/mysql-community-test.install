@@ -14,7 +14,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 usr/lib/mysql/mysql-test/*
-usr/share/man/man1/mysql-test-run.pl.1
+# usr/share/man/man1/mysql-test-run.pl.1
 # legal
 usr/share/doc/mysql-community-test/COPYING
 usr/share/doc/mysql-community-test/README
