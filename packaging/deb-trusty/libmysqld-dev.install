@@ -14,7 +14,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 usr/lib/*/libmysqld.a
-usr/lib/*/libmysqld-debug.a
+#usr/lib/*/libmysqld-debug.a
 # legal
 usr/share/doc/libmysqld-dev/COPYING
 usr/share/doc/libmysqld-dev/README
