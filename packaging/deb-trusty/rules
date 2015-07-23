@@ -53,6 +53,7 @@ override_dh_auto_configure:
 		-DWITH_INNOBASE_STORAGE_ENGINE=1 \
 		-DWITH_INNODB_MEMCACHED=1 \
 		-DCOMPILATION_COMMENT="MySQL Community Server (GPL)" \
+		-DWITH_LIBEVENT=system \
 		-DINSTALL_LAYOUT=DEB
 
 	cat CMakeCache.txt
