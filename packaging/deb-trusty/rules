@@ -60,7 +60,7 @@ override_dh_auto_configure:
 
 override_dh_auto_build:
 	@echo "RULES.$@"
-	$(MAKE) -j1 VERBOSE=1
+	$(MAKE) -j12 VERBOSE=1
 	touch $@
 
 override_dh_auto_test:
