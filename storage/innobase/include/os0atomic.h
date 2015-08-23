@@ -247,8 +247,25 @@ amount to decrement. */
 /**********************************************************//**
 Returns the old value of *ptr, atomically sets *ptr to new_val */
 
-# define os_atomic_test_and_set_ulint(ptr, new_val) \
+# ifdef __aarch64__
+UNIV_INLINE
+ulint
+os_atomic_test_and_set_ulint(ulint *ptr, ulint new_val)
+{
+	__asm__ volatile ("dsb ish" ::: "memory");
+	return(__sync_lock_test_and_set(ptr, new_val));
+}
+UNIV_INLINE
+int
+os_atomic_test_and_set_ulint(volatile int *ptr, int new_val)
+{
+	__asm__ volatile ("dsb ish" ::: "memory");
+	return(__sync_lock_test_and_set(ptr, new_val));
+}
+# else
+#  define os_atomic_test_and_set_ulint(ptr, new_val) \
 	__sync_lock_test_and_set(ptr, new_val)
+# endif /* __aarch64__ */
 #endif
 
 #define os_atomic_inc_ulint(m,v,d)	os_atomic_increment_ulint(v, d)
