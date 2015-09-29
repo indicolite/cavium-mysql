@@ -674,13 +674,6 @@ to other connections. The locks of transactions are protected by
 lock_sys->mutex and sometimes by trx->mutex. */
 
 struct trx_t{
-	trx_id_t	id;		/*!< transaction id */
-	UT_LIST_NODE_T(trx_t)
-			trx_list;	/*!< list of transactions;
-					protected by trx_sys->mutex.
-					The same node is used for both
-					trx_sys_t::ro_trx_list and
-					trx_sys_t::rw_trx_list */
 	ulint		magic_n;
 
 	ib_mutex_t	mutex;		/*!< Mutex protecting the fields
@@ -845,6 +838,7 @@ struct trx_t{
 
 	time_t		start_time;	/*!< time the trx state last time became
 					TRX_STATE_ACTIVE */
+	trx_id_t	id;		/*!< transaction id */
 	XID		xid;		/*!< X/Open XA transaction
 					identification to identify a
 					transaction branch */
@@ -872,6 +866,12 @@ struct trx_t{
 					statement uses, except those
 					in consistent read */
 	/*------------------------------*/
+	UT_LIST_NODE_T(trx_t)
+			trx_list;	/*!< list of transactions;
+					protected by trx_sys->mutex.
+					The same node is used for both
+					trx_sys_t::ro_trx_list and
+					trx_sys_t::rw_trx_list */
 #ifdef UNIV_DEBUG
 	/** The following two fields are mutually exclusive. */
 	/* @{ */

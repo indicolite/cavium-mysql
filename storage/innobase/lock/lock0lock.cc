@@ -1708,16 +1708,11 @@ lock_rec_other_trx_holds_expl(
 
 	if (trx_t *impl_trx = trx_rw_is_active(trx_id, NULL)) {
 		ulint heap_no = page_rec_get_heap_no(rec);
-		trx_t*	next;
-
 		mutex_enter(&trx_sys->mutex);
 
 		for (trx_t* t = UT_LIST_GET_FIRST(trx_sys->rw_trx_list);
 		     t != NULL;
-		     t = next) {
-
-			next = UT_LIST_GET_NEXT(trx_list, t);
-			UNIV_PREFETCH_R(next);
+		     t = UT_LIST_GET_NEXT(trx_list, t)) {
 
 			lock_t *expl_lock = lock_rec_has_expl(
 				precise_mode, block, heap_no, t);
@@ -4833,7 +4828,6 @@ lock_remove_recovered_trx_record_locks(
 				table itself */
 {
 	trx_t*		trx;
-	trx_t*		next_trx;
 	ulint		n_recovered_trx = 0;
 
 	ut_a(table != NULL);
@@ -4843,13 +4837,10 @@ lock_remove_recovered_trx_record_locks(
 
 	for (trx = UT_LIST_GET_FIRST(trx_sys->rw_trx_list);
 	     trx != NULL;
-	     trx = next_trx) {
+	     trx = UT_LIST_GET_NEXT(trx_list, trx)) {
 
 		lock_t*	lock;
 		lock_t*	next_lock;
-
-		next_trx = UT_LIST_GET_NEXT(trx_list, trx);
-		UNIV_PREFETCH_R(next_trx);
 
 		assert_trx_in_rw_list(trx);
 
