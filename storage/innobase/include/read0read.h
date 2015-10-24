@@ -31,7 +31,9 @@ Created 2/16/1997 Heikki Tuuri
 
 #include "ut0byte.h"
 #include "ut0lst.h"
+#include "btr0types.h"
 #include "trx0trx.h"
+#include "trx0sys.h"
 #include "read0types.h"
 
 /*********************************************************************//**
@@ -44,8 +46,30 @@ read_view_open_now(
 /*===============*/
 	trx_id_t	cr_trx_id,	/*!< in: trx_id of creating
 					transaction, or 0 used in purge */
-	mem_heap_t*	heap);		/*!< in: memory heap from which
-					allocated */
+	read_view_t*&	view);		/*!< in,out: pre-allocated view array or
+					NULL if a new one needs to be created */
+
+/*********************************************************************//**
+Clones a read view object. This function will allocate space for two read
+views contiguously, one identical in size and content as @param view (starting
+at returned pointer) and another view immediately following the trx_ids array.
+The second view will have space for an extra trx_id_t element.
+@return	read view struct */
+UNIV_INTERN
+read_view_t*
+read_view_clone(
+/*============*/
+	const read_view_t*	view,		/*!< in: view to clone */
+	read_view_t*&		prebuilt_clone);/*!< in,out: prebuilt view or
+						NULL */
+/*********************************************************************//**
+Insert the view in the proper order into the trx_sys->view_list. The
+read view list is ordered by read_view_t::low_limit_no in descending order. */
+UNIV_INTERN
+void
+read_view_add(
+/*==========*/
+	read_view_t*	view);		/*!< in: view to add to */
 /*********************************************************************//**
 Makes a copy of the oldest existing read view, or opens a new. The view
 must be closed with ..._close.
@@ -54,8 +78,11 @@ UNIV_INTERN
 read_view_t*
 read_view_purge_open(
 /*=================*/
-	mem_heap_t*	heap);		/*!< in: memory heap from which
-					allocated */
+	read_view_t*&	clone_view,	/*!< in,out: pre-allocated view that
+					will be used to clone the oldest view if
+					exists */
+	read_view_t*&	view);		/*!< in,out: pre-allocated view array or
+					NULL if a new one needs to be created */
 /*********************************************************************//**
 Remove a read view from the trx_sys->view_list. */
 UNIV_INLINE
@@ -65,6 +92,13 @@ read_view_remove(
 	read_view_t*	view,		/*!< in: read view, can be 0 */
 	bool		own_mutex);	/*!< in: true if caller owns the
 					trx_sys_t::mutex */
+/*********************************************************************//**
+Frees memory allocated by a read view. */
+UNIV_INTERN
+void
+read_view_free(
+/*===========*/
+	read_view_t*&	view);	/*< in,out: read view */
 /*********************************************************************//**
 Closes a consistent read view for MySQL. This function is called at an SQL
 statement end if the trx isolation level is <= TRX_ISO_READ_COMMITTED. */
@@ -143,14 +177,18 @@ struct read_view_t{
 				are strictly smaller (<) than this value.
 				In other words,
 				this is the "low water mark". */
-	ulint		n_trx_ids;
+	ulint		n_descr;
 				/*!< Number of cells in the trx_ids array */
-	trx_id_t*	trx_ids;/*!< Additional trx ids which the read should
+	ulint		max_descr;
+				/*!< Maximum number of cells in the trx_ids
+				array */
+	trx_id_t*	descriptors;
+				/*!< Additional trx ids which the read should
 				not see: typically, these are the read-write
 				active transactions at the time when the read
 				is serialized, except the reading transaction
 				itself; the trx ids in this array are in a
-				descending order. These trx_ids should be
+				ascending order. These trx_ids should be
 				between the "low" and "high" water marks,
 				that is, up_limit_id and low_limit_id. */
 	trx_id_t	creator_trx_id;

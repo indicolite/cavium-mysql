@@ -374,6 +374,17 @@ static ulint		srv_n_rows_read_old		= 0;
 UNIV_INTERN ulint	srv_truncated_status_writes	= 0;
 UNIV_INTERN ulint	srv_available_undo_logs         = 0;
 
+#define CACHE_ALIGNED __attribute__ ((aligned (CACHE_LINE_SIZE)))
+
+UNIV_INTERN byte
+counters_pad_start[CACHE_LINE_SIZE] __attribute__((unused)) = {0};
+
+UNIV_INTERN ulint		srv_read_views_memory CACHE_ALIGNED	= 0;
+UNIV_INTERN ulint		srv_descriptors_memory CACHE_ALIGNED	= 0;
+
+UNIV_INTERN byte
+counters_pad_end[CACHE_LINE_SIZE] __attribute__((unused)) = {0};
+
 /* Set the following to 0 if you want InnoDB to write messages on
 stderr on startup/shutdown. */
 UNIV_INTERN ibool	srv_print_verbose_log		= TRUE;
@@ -1240,6 +1251,9 @@ srv_printf_innodb_monitor(
 		"; in additional pool allocated " ULINTPF "\n",
 		ut_total_allocated_memory,
 		mem_pool_get_reserved(mem_comm_pool));
+	fprintf(file,
+		"Total memory allocated by read views " ULINTPF "\n",
+		os_atomic_increment_lint(&srv_read_views_memory, 0));
 	fprintf(file, "Dictionary memory allocated " ULINTPF "\n",
 		dict_sys->size);
 
