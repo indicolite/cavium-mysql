@@ -161,15 +161,23 @@ ut_cpuid(
 #endif /* defined (__GNUC__) && defined(__aarch64__) */
 
 #if defined(__GNUC__) && defined(__aarch64__)
+
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
+#ifndef HWCAP_CRC32
+#define HWCAP_CRC32 (1<<7)
+#endif
 /********************************************************************//**
-Fetches AArch64 CPU info */
+Fetches AArch64 CPU info using kernel auxiliary vector */
 static
 void
 ut_cpuid(
 /*=====*/
-	uint64_t	*isar0)		/*!< out: ID_AA64ISAR0_EL1 register */
+	unsigned long	*hwcap)		/*!< out: hwcap */
 {
-	asm("mrs        %0, id_aa64isar0_el1"  : "=r" (*isar0));
+//	asm("mrs        %0, id_aa64isar0_el1"  : "=r" (*isar0));
+//	*isar0 = 1UL << 16;
+	*hwcap = getauxval(AT_HWCAP);
 }
 #endif /* defined(__GNUC__) && defined(__aarch64__) */
 
@@ -836,10 +844,10 @@ ut_crc32_init()
 #endif /* defined(__GNUC__) && defined(__x86_64__) */
 
 #if defined(__GNUC__) && defined(__aarch64__)
-	uint64_t	isar0;
+	unsigned long	hwcap;
 
-	ut_cpuid(&isar0);
-	ut_crc32_hw_enabled = (isar0 >> 16) & 1UL;
+	ut_cpuid(&hwcap);
+	ut_crc32_hw_enabled = hwcap & HWCAP_CRC32;
 #endif /* defined (__GNUC__) && defined(__aarch64__) */
 
 	if (ut_crc32_hw_enabled) {
