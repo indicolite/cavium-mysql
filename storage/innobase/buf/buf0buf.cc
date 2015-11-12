@@ -349,6 +349,10 @@ on the io_type */
 	 ? (counter##_READ)				\
 	 : (counter##_WRITTEN))
 
+/** Real size of a buffer pool chunk in bytes. It may differ from
+srv_buf_pool_chunk_unit due to rounding to OS page size */
+static ulong buf_pool_chunk_size;
+
 /** Registers a chunk to buf_pool_chunk_map
 @param[in]	chunk	chunk of buffers */
 static
@@ -1467,6 +1471,13 @@ buf_chunk_init(
 		}
 
 		chunk->size = size;
+
+		if (buf_pool_chunk_size == 0) {
+			buf_pool_chunk_size = chunk->size * UNIV_PAGE_SIZE;
+		} else {
+			ut_a(buf_pool_chunk_size ==
+			     chunk->size * UNIV_PAGE_SIZE);
+		}
 	}
 
 	/* Init block structs and assign frames for them. Then we
@@ -3826,15 +3837,11 @@ retry:
 	}
 #endif /* UNIV_DEBUG */
 	buf_pool_chunk_map_t*	chunk_map = buf_chunk_map_ref;
+	buf_chunk_t*		chunk;
 
-	if (ptr < reinterpret_cast<byte*>(srv_buf_pool_chunk_unit)) {
-		it = chunk_map->upper_bound(0);
-	} else {
-		it = chunk_map->upper_bound(
-			ptr - srv_buf_pool_chunk_unit);
-	}
+	it = chunk_map->upper_bound(ptr);
 
-	if (it == chunk_map->end()) {
+	if (it == chunk_map->begin()) {
 #ifdef UNIV_DEBUG
 		if (!resize_disabled) {
 			rw_lock_s_unlock(buf_chunk_map_latch);
@@ -3845,9 +3852,12 @@ retry:
 		ut_a(counter < 10);
 		os_thread_sleep(100000); /* 0.1 sec */
 		goto retry;
+	} else if (it == chunk_map->end()) {
+		chunk = chunk_map->rbegin()->second;
+	} else {
+		chunk = (--it)->second;
 	}
 
-	buf_chunk_t*	chunk = it->second;
 #ifdef UNIV_DEBUG
 	if (!resize_disabled) {
 		rw_lock_s_unlock(buf_chunk_map_latch);
