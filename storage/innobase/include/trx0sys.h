@@ -622,10 +622,14 @@ struct trx_sys_t{
 	trx_id_t	rw_max_trx_id;	/*!< Max trx id of read-write transactions
 					which exist or existed */
 #endif
+	char		pad1[CACHE_LINE_SIZE];
+					/*!< To avoid false sharing */
 	trx_list_t	rw_trx_list;	/*!< List of active and committed in
 					memory read-write transactions, sorted
 					on trx id, biggest first. Recovered
 					transactions are always on this list. */
+	char		pad2[CACHE_LINE_SIZE];
+					/*!< To avoid false sharing */
 	trx_list_t	ro_trx_list;	/*!< List of active and committed in
 					memory read-only transactions, sorted
 					on trx id, biggest first. NOTE:
@@ -633,6 +637,8 @@ struct trx_sys_t{
 					is not necessary. We should exploit
 					this and increase concurrency during
 					add/remove. */
+	char		pad3[CACHE_LINE_SIZE];
+					/*!< To avoid false sharing */
 	trx_list_t	mysql_trx_list;	/*!< List of transactions created
 					for MySQL. All transactions on
 					ro_trx_list are on mysql_trx_list. The
@@ -645,6 +651,8 @@ struct trx_sys_t{
 					mysql_trx_list may additionally contain
 					transactions that have not yet been
 					started in InnoDB. */
+	char		pad4[CACHE_LINE_SIZE];
+					/*!< To avoid false sharing */
 	trx_rseg_t*	const rseg_array[TRX_SYS_N_RSEGS];
 					/*!< Pointer array to rollback
 					segments; NULL if slot not in use;
