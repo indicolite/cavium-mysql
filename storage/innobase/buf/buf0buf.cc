@@ -349,10 +349,6 @@ on the io_type */
 	 ? (counter##_READ)				\
 	 : (counter##_WRITTEN))
 
-/** Real size of a buffer pool chunk in bytes. It may differ from
-srv_buf_pool_chunk_unit due to rounding to OS page size */
-static ulong buf_pool_chunk_size;
-
 /** Registers a chunk to buf_pool_chunk_map
 @param[in]	chunk	chunk of buffers */
 static
@@ -1468,13 +1464,6 @@ buf_chunk_init(
 		}
 
 		chunk->size = size;
-
-		if (buf_pool_chunk_size == 0) {
-			buf_pool_chunk_size = chunk->size * UNIV_PAGE_SIZE;
-		} else {
-			ut_a(buf_pool_chunk_size ==
-			     chunk->size * UNIV_PAGE_SIZE);
-		}
 	}
 
 	/* Init block structs and assign frames for them. Then we
