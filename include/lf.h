@@ -20,6 +20,8 @@
 
 C_MODE_START
 
+#define LF_BACKOFF my_yield_processor()
+
 /*
   Helpers to define both func() and _func(), where
   func() is a _func() protected by my_atomic_rwlock_wrlock()

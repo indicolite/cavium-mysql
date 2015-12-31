@@ -269,21 +269,36 @@ make_atomic_store(ptr)
 #undef make_atomic_fas_body
 #undef intptr
 
-/*
-  the macro below defines (as an expression) the code that
-  will be run in spin-loops. Intel manuals recummend to have PAUSE there.
-  It is expected to be defined in include/atomic/ *.h files
-*/
-#ifndef LF_BACKOFF
-#define LF_BACKOFF (1)
-#endif
-
 #define MY_ATOMIC_OK       0
 #define MY_ATOMIC_NOT_1CPU 1
 C_MODE_START
 extern int my_atomic_initialize();
 C_MODE_END
 
+#endif
+
+/*
+  the macro below defines (as an expression) the code that
+  will be run in spin-loops. Intel manuals recummend to have PAUSE there.
+*/
+#ifdef HAVE_PAUSE_INSTRUCTION
+   /*
+      According to the gcc info page, asm volatile means that the instruction
+      has important side-effects and must not be removed.  Also asm volatile may
+      trigger a memory barrier (spilling all registers to memory).
+   */
+#  define MY_PAUSE() __asm__ __volatile__ ("pause")
+# elif defined(HAVE_FAKE_PAUSE_INSTRUCTION)
+#  define UT_PAUSE() __asm__ __volatile__ ("rep; nop")
+# elif defined(_MSC_VER)
+   /*
+      In the Win32 API, the x86 PAUSE instruction is executed by calling the
+      YieldProcessor macro defined in WinNT.h. It is a CPU architecture-
+      independent way by using YieldProcessor.
+   */
+#  define MY_PAUSE() YieldProcessor()
+# else
+#  define MY_PAUSE() ((void) 0)
 #endif
 
 #endif /* MY_ATOMIC_INCLUDED */

@@ -148,6 +148,18 @@ struct my_aligned_storage
 #define MY_ALIGNED(size)
 #endif
 
+/*
+  the macro below defines a compiler barrier, i.e. compiler-specific code to
+  prevent instructions reordering during compile time.
+*/
+#if defined __GNUC__ || defined __SUNPRO_C || defined __SUNPRO_CC
+# define MY_COMPILER_BARRIER() __asm__ __volatile__ ("" ::: "memory")
+#elif defined _MSC_VER
+# define MY_COMPILER_BARRIER() _ReadWriteBarrier()
+#else
+# error No MY_COMPILER_BARRIER() implementation for this compiler!
+#endif
+
 #include <my_attribute.h>
 
 #endif /* MY_COMPILER_INCLUDED */
