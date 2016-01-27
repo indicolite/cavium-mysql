@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -860,7 +860,9 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
   IO_CACHE log;
   File file = -1;
   String* packet = &thd->packet;
-  int error;
+  time_t last_event_sent_ts= time(0);
+  bool time_for_hb_event= false;
+  int error= 0;
   const char *errmsg = "Unknown error";
   char error_text[MAX_SLAVE_ERRMSG]; // to be send to slave via my_message()
   NET* net = &thd->net;
@@ -886,6 +888,7 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
   Diagnostics_area temp_da;
   Diagnostics_area *saved_da= thd->get_stmt_da();
   thd->set_stmt_da(&temp_da);
+  bool was_killed_by_duplicate_slave_uuid= false;
 
   DBUG_ENTER("mysql_binlog_send");
   DBUG_PRINT("enter",("log_ident: '%s'  pos: %ld", log_ident, (long) pos));
@@ -1240,11 +1243,25 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
                                                          STRING_WITH_LEN(act)));
                     };);
     bool is_active_binlog= false;
-    while (!(error= Log_event::read_log_event(&log, packet, log_lock,
+    while (!thd->killed &&
+           !(error= Log_event::read_log_event(&log, packet, log_lock,
                                               current_checksum_alg,
                                               log_file_name,
                                               &is_active_binlog)))
     {
+      DBUG_EXECUTE_IF("simulate_dump_thread_kill",
+                      {
+                        thd->killed= THD::KILL_CONNECTION;
+                      });
+      DBUG_EXECUTE_IF("hold_dump_thread_inside_inner_loop",
+                    {
+                      const char act[]= "now "
+                                        "signal signal_inside_inner_loop "
+                                        "wait_for signal_continue";
+                      DBUG_ASSERT(!debug_sync_set_action(current_thd,
+                                                         STRING_WITH_LEN(act)));
+                      DBUG_ASSERT(thd->killed);
+                    };);
       time_t created;
       DBUG_PRINT("info", ("read_log_event returned 0 on line %d", __LINE__));
 #ifndef DBUG_OFF
@@ -1430,14 +1447,28 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
       {
         p_last_skip_coord->pos= p_coord->pos;
         strcpy(p_last_skip_coord->file_name, p_coord->file_name);
+        /*
+          If we have not send any event from past 'heartbeat_period' time
+          period, then it is time to send a packet before skipping this group.
+         */
+        DBUG_EXECUTE_IF("inject_2sec_sleep_when_skipping_an_event",
+                        {
+                          my_sleep(2000000);
+                        });
+        time_t now= time(0);
+        DBUG_ASSERT(now >= last_event_sent_ts);
+        time_for_hb_event= ((ulonglong)(now - last_event_sent_ts) >=
+                            (ulonglong)(heartbeat_period/1000000000UL));
       }
 
-      if (!skip_group && last_skip_group
-          && event_type != FORMAT_DESCRIPTION_EVENT)
+      if ((!skip_group && last_skip_group
+           && event_type != FORMAT_DESCRIPTION_EVENT) || time_for_hb_event)
       {
         /*
           Dump thread is ready to send it's first transaction after
-          one or more skipped transactions. Send a heart beat event
+          one or more skipped transactions or dump thread did not
+          send any event from past 'heartbeat_period' time frame
+          (busy skipping gtid groups). Send a heart beat event
           to update slave IO thread coordinates before that happens.
 
           Notice that for a new binary log file, FORMAT_DESCRIPTION_EVENT
@@ -1452,18 +1483,24 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
         {
           GOTO_ERR;
         }
+        last_event_sent_ts= time(0);
+        last_skip_group= time_for_hb_event= false;
       }
-
-      /* save this flag for next iteration */
-      last_skip_group= skip_group;
-
-      if (skip_group == false && my_net_write(net, (uchar*) packet->ptr(), packet->length()))
+      else
       {
-        errmsg = "Failed on my_net_write()";
-        my_errno= ER_UNKNOWN_ERROR;
-        GOTO_ERR;
+        last_skip_group= skip_group;
       }
 
+      if (skip_group == false)
+      {
+        if (my_net_write(net, (uchar*) packet->ptr(), packet->length()))
+        {
+          errmsg = "Failed on my_net_write()";
+          my_errno= ER_UNKNOWN_ERROR;
+          GOTO_ERR;
+        }
+        last_event_sent_ts= time(0);
+      }
 
       DBUG_EXECUTE_IF("dump_thread_wait_before_send_xid",
                       {
@@ -1499,6 +1536,10 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
         GOTO_ERR;
     }
 
+    /* If the above while is killed due to thd->killed flag and not
+      due to read_log_event error, then do nothing.*/
+    if (thd->killed)
+      goto end;
     DBUG_EXECUTE_IF("wait_after_binlog_EOF",
                     {
                       const char act[]= "now wait_for signal.rotate_finished no_clear_event";
@@ -1665,6 +1706,11 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
             */
             if (skip_group)
             {
+              /*
+                TODO: Number of HB events sent from here can be reduced
+               by checking whehter it is time to send a HB event or not.
+               (i.e., using the flag time_for_hb_event)
+              */
               if (send_last_skip_group_heartbeat(thd, net, packet,
                                                  p_coord, &ev_offset,
                                                  current_checksum_alg, &errmsg,
@@ -1821,6 +1867,7 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
              my_errno= ER_UNKNOWN_ERROR;
              GOTO_ERR;
             }
+            last_event_sent_ts= time(0);
 
             if (event_type == LOAD_EVENT)
             {
@@ -1907,6 +1954,21 @@ void mysql_binlog_send(THD* thd, char* log_ident, my_off_t pos,
   }
 
 end:
+  /*
+    If the dump thread was killed because of a duplicate slave UUID we
+    will fail throwing an error to the slave so it will not try to
+    reconnect anymore.
+  */
+  mysql_mutex_lock(&thd->LOCK_thd_data);
+  was_killed_by_duplicate_slave_uuid= thd->duplicate_slave_uuid;
+  mysql_mutex_unlock(&thd->LOCK_thd_data);
+  if (was_killed_by_duplicate_slave_uuid)
+  {
+    errmsg= "A slave with the same server_uuid as this slave "
+            "has connected to the master";
+    my_errno= ER_MASTER_FATAL_ERROR_READING_BINLOG;
+    goto err;
+  }
   thd->set_stmt_da(saved_da);
   end_io_cache(&log);
   mysql_file_close(file, MYF(MY_WME));
@@ -2048,7 +2110,8 @@ void kill_zombie_dump_threads(String *slave_uuid)
       sql_print_information("While initializing dump thread for slave with "
                             "UUID <%s>, found a zombie dump thread with "
                             "the same UUID. Master is killing the zombie dump "
-                            "thread.", slave_uuid->c_ptr());
+                            "thread(%lu).", slave_uuid->c_ptr(), tmp->thread_id);
+    tmp->duplicate_slave_uuid= true;
     tmp->awake(THD::KILL_QUERY);
     mysql_mutex_unlock(&tmp->LOCK_thd_data);
   }

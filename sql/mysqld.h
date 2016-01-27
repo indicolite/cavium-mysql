@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -191,6 +191,7 @@ extern ulong slow_launch_threads, slow_launch_time;
 extern ulong table_cache_size, table_def_size;
 extern ulong table_cache_size_per_instance, table_cache_instances;
 extern MYSQL_PLUGIN_IMPORT ulong max_connections;
+extern ulong max_digest_length;
 extern ulong max_connect_errors, connect_timeout;
 extern my_bool opt_slave_allow_batching;
 extern my_bool allow_slave_start;
@@ -282,6 +283,7 @@ extern "C" MYSQL_PLUGIN_IMPORT char **orig_argv;
 extern pthread_attr_t connection_attrib;
 extern MYSQL_FILE *bootstrap_file;
 extern my_bool old_mode;
+extern my_bool avoid_temporal_upgrade;
 extern LEX_STRING opt_init_connect, opt_init_slave;
 extern int bootstrap_error;
 extern char err_shared_dir[];
@@ -342,6 +344,7 @@ extern PSI_mutex_key
   key_relay_log_info_log_space_lock, key_relay_log_info_run_lock,
   key_mutex_slave_parallel_pend_jobs, key_mutex_mts_temp_tables_lock,
   key_mutex_slave_parallel_worker,
+  key_mutex_slave_parallel_worker_count,
   key_structure_guard_mutex, key_TABLE_SHARE_LOCK_ha_data,
   key_LOCK_error_messages, key_LOCK_thread_count, key_LOCK_thd_remove,
   key_LOCK_log_throttle_qni;
@@ -586,6 +589,7 @@ extern mysql_mutex_t
        LOCK_prepared_stmt_count, LOCK_error_messages, LOCK_connection_count,
        LOCK_sql_slave_skip_counter, LOCK_slave_net_timeout;
 #ifdef HAVE_OPENSSL
+extern char* des_key_file;
 extern mysql_mutex_t LOCK_des_key_file;
 #endif
 extern mysql_mutex_t LOCK_server_started;
@@ -668,7 +672,9 @@ enum options_mysqld
   OPT_SECURE_AUTH,
   OPT_THREAD_CACHE_SIZE,
   OPT_HOST_CACHE_SIZE,
-  OPT_TABLE_DEFINITION_CACHE
+  OPT_TABLE_DEFINITION_CACHE,
+  OPT_AVOID_TEMPORAL_UPGRADE,
+  OPT_SHOW_OLD_TEMPORALS
 };
 
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights
    reserved.
 
    This program is free software; you can redistribute it and/or modify
@@ -38,11 +38,14 @@
 #include "opt_trace_context.h"    /* Opt_trace_context */
 #include "rpl_gtid.h"
 
+#include "sql_digest_stream.h"            // sql_digest_state
+
 #include <mysql/psi/mysql_stage.h>
 #include <mysql/psi/mysql_statement.h>
 #include <mysql/psi/mysql_idle.h>
 #include <mysql_com_server.h>
 #include "sql_data_change.h"
+#include "my_atomic.h"
 
 #define FLAGSTR(V,F) ((V)&(F)?#F" ":"")
 
@@ -553,6 +556,12 @@ typedef struct system_variables
 
   Gtid_specification gtid_next;
   Gtid_set_or_null gtid_next_list;
+  /**
+    Compatibility option to mark the pre MySQL-5.6.4 temporals columns using
+    the old format using comments for SHOW CREATE TABLE and in I_S.COLUMNS
+    'COLUMN_TYPE' field.
+  */
+  my_bool show_old_temporals;
 } SV;
 
 
@@ -640,8 +649,6 @@ typedef struct system_status_var
 */
 
 #define last_system_status_var questions
-
-void mark_transaction_to_rollback(THD *thd, bool all);
 
 
 /**
@@ -848,7 +855,7 @@ public:
   String      rewritten_query;
 
   inline char *query() const { return query_string.str(); }
-  inline uint32 query_length() const { return query_string.length(); }
+  inline uint32 query_length() const { return (uint32)query_string.length(); }
   const CHARSET_INFO *query_charset() const { return query_string.charset(); }
   void set_query_inner(const CSET_STRING &string_arg)
   {
@@ -2006,6 +2013,16 @@ public:
 
   bool lock_global_read_lock(THD *thd);
   void unlock_global_read_lock(THD *thd);
+
+  /**
+    Used by innodb memcached server to check if any connections
+    have global read lock
+  */
+  static bool global_read_lock_active()
+  {
+    return my_atomic_load32(&m_active_requests) ? true : false;
+  }
+
   /**
     Check if this connection can acquire protection against GRL and
     emit error if otherwise.
@@ -2023,6 +2040,7 @@ public:
   bool is_acquired() const { return m_state != GRL_NONE; }
   void set_explicit_lock_duration(THD *thd);
 private:
+  volatile static int32 m_active_requests;
   enum_grl_state m_state;
   /**
     In order to acquire the global read lock, the connection must
@@ -2250,6 +2268,7 @@ public:
     decremented each time before it returns from the function.
   */
   uint fill_status_recursion_level;
+  uint fill_variables_recursion_level;
 
   /* container for handler's private per-connection data */
   Ha_data ha_data[MAX_HA];
@@ -2830,6 +2849,13 @@ public:
   PROFILING  profiling;
 #endif
 
+  /** Current statement digest. */
+  sql_digest_state *m_digest;
+  /** Current statement digest token array. */
+  unsigned char *m_token_array;
+  /** Top level statement digest. */
+  sql_digest_state m_digest_state;
+
   /** Current statement instrumentation. */
   PSI_statement_locker *m_statement_psi;
 #ifdef HAVE_PSI_STATEMENT_INTERFACE
@@ -2975,6 +3001,7 @@ public:
   {
     CE_NONE= 0,
     CE_FLUSH_ERROR,
+    CE_SYNC_ERROR,
     CE_COMMIT_ERROR,
     CE_ERROR_COUNT
   } commit_error;
@@ -4061,7 +4088,9 @@ public:
   }
   LEX_STRING get_invoker_user() { return invoker_user; }
   LEX_STRING get_invoker_host() { return invoker_host; }
-  bool has_invoker() { return invoker_user.length > 0; }
+  bool has_invoker() { return invoker_user.str != NULL; }
+
+  void mark_transaction_to_rollback(bool all);
 
 #ifndef DBUG_OFF
 private:
@@ -4113,6 +4142,14 @@ private:
    */
   LEX_STRING invoker_user;
   LEX_STRING invoker_host;
+public:
+  /**
+    This is only used by master dump threads.
+    When the master receives a new connection from a slave with a UUID that
+    is already connected, it will set this flag TRUE before killing the old
+    slave connection.
+  */
+  bool duplicate_slave_uuid;
 };
 
 
@@ -4902,7 +4939,7 @@ class user_var_entry
     @retval        false on success
     @retval        true on memory allocation error
   */
-  bool store(void *from, uint length, Item_result type);
+  bool store(const void *from, uint length, Item_result type);
 
 public:
   user_var_entry() {}                         /* Remove gcc warning */
@@ -4925,7 +4962,7 @@ public:
     @retval        false on success
     @retval        true on memory allocation error
   */
-  bool store(void *from, uint length, Item_result type,
+  bool store(const void *from, uint length, Item_result type,
              const CHARSET_INFO *cs, Derivation dv, bool unsigned_arg);
   /**
     Set type of to the given value.
@@ -4954,7 +4991,7 @@ public:
   static user_var_entry *create(const Name_string &name)
   {
     user_var_entry *entry;
-    uint size= ALIGN_SIZE(sizeof(user_var_entry)) +
+    size_t size= ALIGN_SIZE(sizeof(user_var_entry)) +
                (name.length() + 1) + extra_size;
     if (!(entry= (user_var_entry*) my_malloc(size, MYF(MY_WME |
                                                        ME_FATALERROR))))
@@ -5298,7 +5335,6 @@ void add_to_status(STATUS_VAR *to_var, STATUS_VAR *from_var);
 
 void add_diff_to_status(STATUS_VAR *to_var, STATUS_VAR *from_var,
                         STATUS_VAR *dec_var);
-void mark_transaction_to_rollback(THD *thd, bool all);
 
 /* Inline functions */
 

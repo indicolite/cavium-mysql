@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -520,6 +520,14 @@ static Sys_var_long Sys_pfs_digest_size(
        DEFAULT(-1),
        BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
 
+static Sys_var_long Sys_pfs_max_digest_length(
+       "performance_schema_max_digest_length",
+       "Maximum length considered for digest text, when stored in performance_schema tables.",
+       READ_ONLY GLOBAL_VAR(pfs_param.m_max_digest_length),
+       CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 1024 * 1024),
+       DEFAULT(1024),
+       BLOCK_SIZE(1), PFS_TRAILING_PROPERTIES);
+
 static Sys_var_long Sys_pfs_connect_attrs_size(
        "performance_schema_session_connect_attrs_size",
        "Size of session attribute string buffer per thread."
@@ -822,13 +830,12 @@ static Sys_var_mybool Sys_explicit_defaults_for_timestamp(
 static bool repository_check(sys_var *self, THD *thd, set_var *var, SLAVE_THD_TYPE thread_mask)
 {
   bool ret= FALSE;
-#ifndef NO_EMBEDDED_ACCESS_CHECKS
-  if (!(thd->security_ctx->master_access & SUPER_ACL))
+  if (thd->in_active_multi_stmt_transaction())
   {
-    my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "SUPER");
-    return TRUE;
+    my_error(ER_VARIABLE_NOT_SETTABLE_IN_TRANSACTION, MYF(0),
+             var->var->name.str);
+    return true;
   }
-#endif
 #ifdef HAVE_REPLICATION
   int running= 0;
   const char *msg= NULL;
@@ -1779,6 +1786,14 @@ static Sys_var_ulong Sys_max_connect_errors(
        VALID_RANGE(1, ULONG_MAX), DEFAULT(100),
        BLOCK_SIZE(1));
 
+static Sys_var_long Sys_max_digest_length(
+       "max_digest_length",
+       "Maximum length considered for digest text.",
+       READ_ONLY GLOBAL_VAR(max_digest_length),
+       CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 1024 * 1024),
+       DEFAULT(1024),
+       BLOCK_SIZE(1));
+
 static bool check_max_delayed_threads(sys_var *self, THD *thd, set_var *var)
 {
   return var->type != OPT_GLOBAL &&
@@ -2042,7 +2057,7 @@ static Sys_var_ulong Sys_open_files_limit(
        "open_files_limit",
        "If this is not 0, then mysqld will use this value to reserve file "
        "descriptors to use with setrlimit(). If this value is 0 then mysqld "
-       "will reserve max_connections*5 or max_connections + table_cache*2 "
+       "will reserve max_connections*5 or max_connections + table_open_cache*2 "
        "(whichever is larger) number of file descriptors",
        READ_ONLY GLOBAL_VAR(open_files_limit), CMD_LINE(REQUIRED_ARG),
        VALID_RANGE(0, OS_FILE_LIMIT), DEFAULT(0), BLOCK_SIZE(1),
@@ -2469,7 +2484,7 @@ static Sys_var_ulong Sys_trans_alloc_block_size(
        "transaction_alloc_block_size",
        "Allocation block size for transactions to be stored in binary log",
        SESSION_VAR(trans_alloc_block_size), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(1024, ULONG_MAX), DEFAULT(QUERY_ALLOC_BLOCK_SIZE),
+       VALID_RANGE(1024, 128 * 1024), DEFAULT(QUERY_ALLOC_BLOCK_SIZE),
        BLOCK_SIZE(1024), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0),
        ON_UPDATE(fix_trans_mem_root));
 
@@ -2477,7 +2492,7 @@ static Sys_var_ulong Sys_trans_prealloc_size(
        "transaction_prealloc_size",
        "Persistent buffer for transactions to be stored in binary log",
        SESSION_VAR(trans_prealloc_size), CMD_LINE(REQUIRED_ARG),
-       VALID_RANGE(1024, ULONG_MAX), DEFAULT(TRANS_ALLOC_PREALLOC_SIZE),
+       VALID_RANGE(1024, 128 * 1024), DEFAULT(TRANS_ALLOC_PREALLOC_SIZE),
        BLOCK_SIZE(1024), NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0),
        ON_UPDATE(fix_trans_mem_root));
 
@@ -4283,15 +4298,20 @@ static Sys_var_mybool Sys_enforce_gtid_consistency(
 
 static Sys_var_mybool Sys_binlog_gtid_simple_recovery(
        "binlog_gtid_simple_recovery",
-       "If this option is enabled, the server does not scan more than one "
-       "binary log for every iteration when initializing GTID sets on server "
-       "restart. Enabling this option is very useful when restarting a server "
-       "which has already generated lots of binary logs without GTID events. "
-       "Note: If this option is enabled, GLOBAL.GTID_EXECUTED and "
-       "GLOBAL.GTID_PURGED cannot be initialized correctly if binary log(s) "
-       "with GTID events were generated before binary log(s) without GTID "
-       "events, for example if gtid_mode is disabled when the server has "
-       "already generated binary log(s) with GTID events and not purged them.",
+       "If this option is enabled, the server does not open more than "
+       "two binary logs when initializing GTID_PURGED and "
+       "GTID_EXECUTED, either during server restart or when binary "
+       "logs are being purged. Enabling this option is useful when "
+       "the server has already generated many binary logs without "
+       "GTID events (e.g., having GTID_MODE = OFF). Note: If this "
+       "option is enabled, GLOBAL.GTID_EXECUTED and "
+       "GLOBAL.GTID_PURGED may be initialized wrongly in two cases: "
+       "(1) GTID_MODE was ON for some binary logs but OFF for the "
+       "newest binary log. (2) SET GTID_PURGED was issued after the "
+       "oldest existing binary log was generated. If a wrong set is "
+       "computed in one of case (1) or case (2), it will remain "
+       "wrong even if the server is later restarted with this option "
+       "disabled.",
        READ_ONLY GLOBAL_VAR(binlog_gtid_simple_recovery),
        CMD_LINE(OPT_ARG), DEFAULT(FALSE));
 
@@ -4659,3 +4679,28 @@ static Sys_var_enum Sys_block_encryption_mode(
   "block_encryption_mode", "mode for AES_ENCRYPT/AES_DECRYPT",
   SESSION_VAR(my_aes_mode), CMD_LINE(REQUIRED_ARG),
   my_aes_opmode_names, DEFAULT(my_aes_128_ecb));
+
+static Sys_var_mybool Sys_avoid_temporal_upgrade(
+       "avoid_temporal_upgrade",
+       "When this option is enabled, the pre-5.6.4 temporal types are "
+       "not upgraded to the new format for ALTER TABLE requests ADD/CHANGE/MODIFY"
+       " COLUMN, ADD INDEX or FORCE operation. "
+       "This variable is deprecated and will be removed in a future release.",
+        GLOBAL_VAR(avoid_temporal_upgrade),
+        CMD_LINE(OPT_ARG, OPT_AVOID_TEMPORAL_UPGRADE),
+        DEFAULT(FALSE), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+        ON_CHECK(0), ON_UPDATE(0),
+        DEPRECATED(""));
+
+static Sys_var_mybool Sys_show_old_temporals(
+       "show_old_temporals",
+       "When this option is enabled, the pre-5.6.4 temporal types will "
+       "be marked in the 'SHOW CREATE TABLE' and 'INFORMATION_SCHEMA.COLUMNS' "
+       "table as a comment in COLUMN_TYPE field. "
+       "This variable is deprecated and will be removed in a future release.",
+        SESSION_VAR(show_old_temporals),
+        CMD_LINE(OPT_ARG, OPT_SHOW_OLD_TEMPORALS),
+        DEFAULT(FALSE), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+        ON_CHECK(0), ON_UPDATE(0),
+        DEPRECATED(""));
+

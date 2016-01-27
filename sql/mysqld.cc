@@ -582,6 +582,11 @@ ulong expire_logs_days = 0;
   in the sp_cache for one connection.
 */
 ulong stored_program_cache_size= 0;
+/**
+  Compatibility option to prevent auto upgrade of old temporals
+  during certain ALTER TABLE operations.
+*/
+my_bool avoid_temporal_upgrade;
 
 const double log_10[] = {
   1e000, 1e001, 1e002, 1e003, 1e004, 1e005, 1e006, 1e007, 1e008, 1e009,
@@ -2383,7 +2388,7 @@ static void network_init(void)
       returned by getaddrinfo();
     */
 
-    struct addrinfo *a;
+    struct addrinfo *a = NULL;
     ip_sock= create_socket(ai, AF_INET, &a);
 
     if (mysql_socket_getfd(ip_sock) == INVALID_SOCKET)
@@ -3856,6 +3861,9 @@ int init_common_variables()
     return 1;
   set_server_version();
 
+  sql_print_information("%s (mysqld %s) starting as process %lu ...",
+                        my_progname, server_version, (ulong) getpid());
+
 #ifndef EMBEDDED_LIBRARY
   if (opt_help && !opt_verbose)
     unireg_abort(0);
@@ -4082,17 +4090,11 @@ int init_common_variables()
                       "--slow-query-log-file option, log tables are used. "
                       "To enable logging to files use the --log-output=file option.");
 
-#define FIX_LOG_VAR(VAR, ALT)                                   \
-  if (!VAR || !*VAR)                                            \
-  {                                                             \
-    my_free(VAR); /* it could be an allocated empty string "" */ \
-    VAR= ALT;                                                    \
-  }
+  if (!opt_logname || !*opt_logname)
+    opt_logname= make_default_log_name(logname_path, ".log");
 
-  FIX_LOG_VAR(opt_logname,
-              make_default_log_name(logname_path, ".log"));
-  FIX_LOG_VAR(opt_slow_logname,
-              make_default_log_name(slow_logname_path, "-slow.log"));
+  if (!opt_slow_logname || !*opt_slow_logname)
+    opt_slow_logname= make_default_log_name(slow_logname_path, "-slow.log");
 
 #if defined(ENABLED_DEBUG_SYNC)
   /* Initialize the debug sync facility. See debug_sync.cc. */
@@ -4121,13 +4123,14 @@ int init_common_variables()
   {
     if (lower_case_table_names_used)
     {
-      if (log_warnings)
-  sql_print_warning("\
-You have forced lower_case_table_names to 0 through a command-line \
-option, even though your file system '%s' is case insensitive.  This means \
-that you can corrupt a MyISAM table by accessing it with different cases. \
-You should consider changing lower_case_table_names to 1 or 2",
-      mysql_real_data_home);
+      sql_print_error("The server option 'lower_case_table_names' is "
+                      "configured to use case sensitive table names but the "
+                      "data directory is on a case-insensitive file system "
+                      "which is an unsupported combination. Please consider "
+                      "either using a case sensitive file system for your data "
+                      "directory or switching to a case-insensitive table name "
+                      "mode.");
+      return 1;
     }
     else
     {
@@ -5662,6 +5665,8 @@ int mysqld_main(int argc, char **argv)
   }
 #endif
 
+  MYSQL_SET_STAGE(0 ,__FILE__, __LINE__);
+
 #if defined(_WIN32) || defined(HAVE_SMEM)
   handle_connections_methods();
 #else
@@ -6935,7 +6940,7 @@ void adjust_table_cache_size(ulong requested_open_files)
     char msg[1024];
 
     snprintf(msg, sizeof(msg),
-             "Changed limits: table_cache: %lu (requested %lu)",
+             "Changed limits: table_open_cache: %lu (requested %lu)",
              limit, table_cache_size);
     buffered_logs.buffer(WARNING_LEVEL, msg);
 
@@ -8754,6 +8759,12 @@ pfs_error:
   case OPT_TABLE_DEFINITION_CACHE:
     table_definition_cache_specified= true;
     break;
+  case OPT_AVOID_TEMPORAL_UPGRADE:
+    WARN_DEPRECATED_NO_REPLACEMENT(NULL, "avoid_temporal_upgrade");
+    break;
+  case OPT_SHOW_OLD_TEMPORALS:
+    WARN_DEPRECATED_NO_REPLACEMENT(NULL, "show_old_temporals");
+    break;
   }
   return 0;
 }
@@ -9379,6 +9390,7 @@ PSI_mutex_key
   key_relay_log_info_sleep_lock,
   key_relay_log_info_log_space_lock, key_relay_log_info_run_lock,
   key_mutex_slave_parallel_pend_jobs, key_mutex_mts_temp_tables_lock,
+  key_mutex_slave_parallel_worker_count,
   key_mutex_slave_parallel_worker,
   key_structure_guard_mutex, key_TABLE_SHARE_LOCK_ha_data,
   key_LOCK_error_messages, key_LOG_INFO_lock, key_LOCK_thread_count,
@@ -9461,6 +9473,7 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_relay_log_info_log_space_lock, "Relay_log_info::log_space_lock", 0},
   { &key_relay_log_info_run_lock, "Relay_log_info::run_lock", 0},
   { &key_mutex_slave_parallel_pend_jobs, "Relay_log_info::pending_jobs_lock", 0},
+  { &key_mutex_slave_parallel_worker_count, "Relay_log_info::exit_count_lock", 0},
   { &key_mutex_mts_temp_tables_lock, "Relay_log_info::temp_tables_lock", 0},
   { &key_mutex_slave_parallel_worker, "Worker_info::jobs_lock", 0},
   { &key_structure_guard_mutex, "Query_cache::structure_guard_mutex", 0},

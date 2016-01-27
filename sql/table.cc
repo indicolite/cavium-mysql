@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2100,6 +2100,8 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
   bool error_reported= FALSE;
   uchar *record, *bitmaps;
   Field **field_ptr;
+  Field *fts_doc_id_field= NULL;
+
   DBUG_ENTER("open_table_from_share");
   DBUG_PRINT("enter",("name: '%s.%s'  form: 0x%lx", share->db.str,
                       share->table_name.str, (long) outparam));
@@ -2163,18 +2165,6 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
       outparam->record[1]= outparam->record[0];   // Safety
   }
 
-#ifdef HAVE_purify
-  /*
-    We need this because when we read var-length rows, we are not updating
-    bytes after end of varchar
-  */
-  if (records > 1)
-  {
-    memcpy(outparam->record[0], share->default_values, share->rec_buff_length);
-    memcpy(outparam->record[1], share->default_values, share->null_bytes);
-  }
-#endif
-
   if (!(field_ptr = (Field **) alloc_root(&outparam->mem_root,
                                           (uint) ((share->fields+1)*
                                                   sizeof(Field*)))))
@@ -2199,6 +2189,11 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
     new_field->init(outparam);
     new_field->move_field_offset((my_ptrdiff_t) (outparam->record[0] -
                                                  outparam->s->default_values));
+    /* Check if FTS_DOC_ID column is present in the table */
+    if (outparam->file &&
+        (outparam->file->ha_table_flags() & HA_CAN_FULLTEXT_EXT) &&
+        !strcmp(outparam->field[i]->field_name, FTS_DOC_ID_COL_NAME))
+      fts_doc_id_field= new_field;
   }
   (*field_ptr)= 0;                              // End marker
 
@@ -2253,6 +2248,10 @@ int open_table_from_share(THD *thd, TABLE_SHARE *share, const char *alias,
       }
       /* Skip unused key parts if they exist */
       key_part+= key_info->unused_key_parts;
+
+      /* Set TABLE::fts_doc_id_field for tables with FT KEY */
+      if ((key_info->flags & HA_FULLTEXT))
+        outparam->fts_doc_id_field= fts_doc_id_field;
     }
   }
 
@@ -3696,6 +3695,7 @@ void TABLE::init(THD *thd, TABLE_LIST *tl)
   fulltext_searched= 0;
   file->ft_handler= 0;
   reginfo.impossible_range= 0;
+  reginfo.join_tab= NULL;
 
   /* Catch wrong handling of the auto_increment_field_not_null. */
   DBUG_ASSERT(!auto_increment_field_not_null);
@@ -3886,6 +3886,13 @@ void TABLE_LIST::set_underlying_merge()
       if (!merge_underlying_list->updatable)
         updatable= false;
       schema_table= merge_underlying_list->schema_table;
+    }
+    else
+    {
+      for (tbl= merge_underlying_list; tbl; tbl= tbl->next_local)
+      {
+          updatable&= tbl->updatable;
+      }
     }
   }
 }
@@ -5743,12 +5750,23 @@ void TABLE_LIST::reinit_before_use(THD *thd)
  /*
    Reset table_name and table_name_length,if it is a anonymous derived table
    or schema table. They are not valid as TABLEs were closed in the end of
-   previous prepare or execute call.
+   previous prepare or execute call. For derived table of view, restore view's
+   name and database wiped out by derived table processing.
  */
-  if (derived)
+  if (derived != NULL)
   {
-    table_name= NULL;
-    table_name_length= 0;
+    if (view != NULL)
+    {
+      db= view_db.str;
+      db_length= view_db.length;
+      table_name= view_name.str;
+      table_name_length= view_name.length;
+    }
+    else
+    {
+      table_name= NULL;
+      table_name_length= 0;
+    }
   }
   else if (schema_table_name)
   {
@@ -6152,12 +6170,12 @@ static bool add_derived_key(List<Derived_key> &derived_key_list, Field *field,
   {
     THD *thd= field->table->in_use;
     key++;
-    entry= new (thd->stmt_arena->mem_root) Derived_key();
+    entry= new (thd->mem_root) Derived_key();
     if (!entry)
       return TRUE;
     entry->referenced_by= ref_by_tbl;
     entry->used_fields.clear_all();
-    if (derived_key_list.push_back(entry, thd->stmt_arena->mem_root))
+    if (derived_key_list.push_back(entry, thd->mem_root))
       return TRUE;
     field->table->max_keys++;
   }

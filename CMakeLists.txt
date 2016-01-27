@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,6 +18,11 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 if("${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}" GREATER 2.6)
  CMAKE_POLICY(VERSION 2.8)
 endif()
+
+# We use CMAKE_SHARED_LIBRARY_<Lang>_FLAGS. See cmake --help-policy CMP0018
+IF(CMAKE_VERSION VERSION_GREATER "2.8.8")
+  CMAKE_POLICY(SET CMP0018 OLD)
+ENDIF()
 
 # We use PROPERTIES LINK_INTERFACE_LIBRARIES. See cmake --help-policy CMP0022
 IF(CMAKE_VERSION VERSION_EQUAL "2.8.12" OR
@@ -495,6 +500,7 @@ IF(NOT WITHOUT_SERVER)
   ADD_SUBDIRECTORY(packaging/rpm-oel)
   ADD_SUBDIRECTORY(packaging/rpm-fedora)
   ADD_SUBDIRECTORY(packaging/rpm-sles)
+  ADD_SUBDIRECTORY(packaging/rpm-docker)
 ENDIF()
 
 INCLUDE(cmake/abi_check.cmake)

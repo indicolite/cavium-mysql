@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1012,6 +1012,46 @@ static longlong eval_num_suffix(char *argument, int *error, char *option_name)
   return num;
 }
 
+/*
+  function: eval_num_suffix_ull
+
+  Transforms a number with a suffix to unsigned longlong number. Suffix can
+  be k|K for kilo, m|M for mega or g|G for giga.
+*/
+
+static ulonglong eval_num_suffix_ull(char *argument, int *error,
+                                     char *option_name)
+{
+  char *endchar;
+  ulonglong num;
+
+  *error= 0;
+  errno= 0;
+  num= strtoull(argument, &endchar, 10);
+  if (errno == ERANGE)
+  {
+    my_getopt_error_reporter(ERROR_LEVEL,
+                             "Incorrect unsigned integer value:'%s'", argument);
+    *error= 1;
+    return 0;
+  }
+  if (*endchar == 'k' || *endchar == 'K')
+    num*= 1024L;
+  else if (*endchar == 'm' || *endchar == 'M')
+    num*= 1024L * 1024L;
+  else if (*endchar == 'g' || *endchar == 'G')
+    num*= 1024L * 1024L * 1024L;
+  else if (*endchar)
+  {
+    fprintf(stderr,
+	    "Unknown suffix '%c' used for variable '%s' (value '%s')\n",
+	    *endchar, option_name, argument);
+    *error= 1;
+    return 0;
+  }
+  return num;
+}
+
 /* 
   function: getopt_ll
 
@@ -1107,6 +1147,14 @@ longlong getopt_ll_limit_value(longlong num, const struct my_option *optp,
   return num;
 }
 
+static inline my_bool is_negative_num(char* num)
+{
+  while (my_isspace(&my_charset_latin1, *num))
+    num++;
+
+  return (*num == '-');
+}
+
 /*
   function: getopt_ull
 
@@ -1116,7 +1164,20 @@ longlong getopt_ll_limit_value(longlong num, const struct my_option *optp,
 
 static ulonglong getopt_ull(char *arg, const struct my_option *optp, int *err)
 {
-  ulonglong num= eval_num_suffix(arg, err, (char*) optp->name);
+  char buf[255];
+  ulonglong num;
+
+  /* If a negative number is specified as a value for the option. */
+  if (arg == NULL || is_negative_num(arg) == TRUE)
+  {
+    num= (ulonglong) optp->min_value;
+    my_getopt_error_reporter(WARNING_LEVEL,
+                             "option '%s': value %s adjusted to %s",
+                             optp->name, arg, ullstr(num, buf));
+  }
+  else
+    num= eval_num_suffix_ull(arg, err, (char*) optp->name);
+
   return getopt_ull_limit_value(num, optp, NULL);
 }
 

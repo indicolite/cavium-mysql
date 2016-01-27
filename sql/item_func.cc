@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -4729,7 +4729,7 @@ bool user_var_entry::realloc(uint length)
   @retval  true    on allocation error
 
 */
-bool user_var_entry::store(void *from, uint length, Item_result type)
+bool user_var_entry::store(const void *from, uint length, Item_result type)
 {
   // Store strings with end \0
   if (realloc(length + MY_TEST(type == STRING_RESULT)))
@@ -4763,7 +4763,7 @@ bool user_var_entry::store(void *from, uint length, Item_result type)
     true    failure
 */
 
-bool user_var_entry::store(void *ptr, uint length, Item_result type,
+bool user_var_entry::store(const void *ptr, uint length, Item_result type,
                            const CHARSET_INFO *cs, Derivation dv,
                            bool unsigned_arg)
 {
@@ -4776,7 +4776,7 @@ bool user_var_entry::store(void *ptr, uint length, Item_result type,
 
 
 bool
-Item_func_set_user_var::update_hash(void *ptr, uint length,
+Item_func_set_user_var::update_hash(const void *ptr, uint length,
                                     Item_result res_type,
                                     const CHARSET_INFO *cs, Derivation dv,
                                     bool unsigned_arg)
@@ -4790,8 +4790,16 @@ Item_func_set_user_var::update_hash(void *ptr, uint length,
     null_value= ((Item_field*)args[0])->field->is_null();
   else
     null_value= args[0]->null_value;
+
+  if (ptr == NULL)
+  {
+    DBUG_ASSERT(length == 0);
+    null_value= true;
+  }
+
   if (null_value && null_item)
     res_type= entry->type();                    // Don't change type of item
+
   if (null_value)
     entry->set_null_value(res_type);
   else if (entry->store(ptr, length, res_type, cs, dv, unsigned_arg))
@@ -5046,13 +5054,13 @@ Item_func_set_user_var::update()
   switch (cached_result_type) {
   case REAL_RESULT:
   {
-    res= update_hash((void*) &save_result.vreal,sizeof(save_result.vreal),
+    res= update_hash(&save_result.vreal,sizeof(save_result.vreal),
 		     REAL_RESULT, default_charset(), DERIVATION_IMPLICIT, 0);
     break;
   }
   case INT_RESULT:
   {
-    res= update_hash((void*) &save_result.vint, sizeof(save_result.vint),
+    res= update_hash(&save_result.vint, sizeof(save_result.vint),
                      INT_RESULT, default_charset(), DERIVATION_IMPLICIT,
                      unsigned_flag);
     break;
@@ -5060,10 +5068,10 @@ Item_func_set_user_var::update()
   case STRING_RESULT:
   {
     if (!save_result.vstr)					// Null value
-      res= update_hash((void*) 0, 0, STRING_RESULT, &my_charset_bin,
+      res= update_hash(NULL, 0, STRING_RESULT, &my_charset_bin,
 		       DERIVATION_IMPLICIT, 0);
     else
-      res= update_hash((void*) save_result.vstr->ptr(),
+      res= update_hash(save_result.vstr->ptr(),
 		       save_result.vstr->length(), STRING_RESULT,
 		       save_result.vstr->charset(),
 		       DERIVATION_IMPLICIT, 0);
@@ -5072,10 +5080,10 @@ Item_func_set_user_var::update()
   case DECIMAL_RESULT:
   {
     if (!save_result.vdec)					// Null value
-      res= update_hash((void*) 0, 0, DECIMAL_RESULT, &my_charset_bin,
+      res= update_hash(NULL, 0, DECIMAL_RESULT, &my_charset_bin,
                        DERIVATION_IMPLICIT, 0);
     else
-      res= update_hash((void*) save_result.vdec,
+      res= update_hash(save_result.vdec,
                        sizeof(my_decimal), DECIMAL_RESULT,
                        default_charset(), DERIVATION_IMPLICIT, 0);
     break;
@@ -6201,6 +6209,18 @@ void Item_func_match::init_search(bool no_order)
   DBUG_VOID_RETURN;
 }
 
+/**
+   Add field into table read set.
+
+   @param field field to be added to the table read set.
+*/
+static void update_table_read_set(Field *field)
+{
+  TABLE *table= field->table;
+
+  if (!bitmap_fast_test_and_set(table->read_set, field->field_index))
+    table->covering_keys.intersect(field->part_of_key);
+}
 
 bool Item_func_match::fix_fields(THD *thd, Item **ref)
 {
@@ -6227,12 +6247,12 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref)
   const_item_cache=0;
   for (uint i=1 ; i < arg_count ; i++)
   {
-    item=args[i];
-    if (item->type() == Item::REF_ITEM)
-      args[i]= item= *((Item_ref *)item)->ref;
-    if (item->type() != Item::FIELD_ITEM)
+    item= args[i]= args[i]->real_item();
+    if (item->type() != Item::FIELD_ITEM ||
+        /* Cannot use FTS index with outer table field */
+        (item->used_tables() & OUTER_REF_TABLE_BIT))
     {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), "AGAINST");
+      my_error(ER_WRONG_ARGUMENTS, MYF(0), "MATCH");
       return TRUE;
     }
     allows_multi_table_search &= 
@@ -6252,11 +6272,45 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref)
     my_error(ER_WRONG_ARGUMENTS,MYF(0),"MATCH");
     return TRUE;
   }
-  table=((Item_field *)item)->field->table;
+
+  /*
+    Here we make an assumption that if the engine supports
+    fulltext extension(HA_CAN_FULLTEXT_EXT flag) then table
+    can have FTS_DOC_ID column. Atm this is the only way
+    to distinguish MyISAM and InnoDB engines.
+  */
+  table= ((Item_field *)item)->field->table;
+
   if (!(table->file->ha_table_flags() & HA_CAN_FULLTEXT))
   {
     my_error(ER_TABLE_CANT_HANDLE_FT, MYF(0));
     return 1;
+  }
+  if ((table->file->ha_table_flags() & HA_CAN_FULLTEXT_EXT))
+  {
+    Field *doc_id_field= table->fts_doc_id_field;
+    /*
+      Update read set with FTS_DOC_ID column so that indexes that have
+      FTS_DOC_ID part can be considered as a covering index.
+    */
+    if (doc_id_field)
+      update_table_read_set(doc_id_field);
+    /*
+      Prevent index only accces by non-FTS index if table does not have
+      FTS_DOC_ID column, find_relevance does not work properly without
+      FTS_DOC_ID value.
+    */
+    else
+      table->no_keyread= true;
+  }
+  else
+  {
+    /*
+      Since read_set is not updated for MATCH arguments
+      it's necessary to update it here for MyISAM.
+    */
+    for (uint i= 1; i < arg_count; i++)
+      update_table_read_set(((Item_field*)args[i])->field);
   }
   table->fulltext_searched=1;
   return agg_item_collations_for_comparison(cmp_collation, func_name(),

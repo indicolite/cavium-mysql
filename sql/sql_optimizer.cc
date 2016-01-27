@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -4883,6 +4883,18 @@ add_key_field(Key_field **key_fields,uint and_level, Item_func *cond,
   DBUG_PRINT("info",("add_key_field for field %s",field->field_name));
   uint exists_optimize= 0;
   TABLE_LIST *table= field->table->pos_in_table_list;
+
+  if (field->table->reginfo.join_tab == NULL)
+  {
+    /*
+       Due to a bug in IN-to-EXISTS (grep for real_item() in item_subselect.cc
+       for more info), an index over a field from an outer query might be
+       considered here, which is incorrect. Their query has been fully
+       optimized already so their reginfo.join_tab is NULL and we reject them.
+    */
+    return;
+  }
+
   if (!table->derived_keys_ready && table->uses_materialization() &&
       !field->table->is_created() &&
       table->update_derived_keys(field, value, num_values))
@@ -6757,6 +6769,8 @@ static bool convert_subquery_to_semijoin(JOIN *parent_join,
   parent_join->tables+= subq_lex->join->tables;
   parent_join->primary_tables+= subq_lex->join->tables;
 
+  parent_lex->between_count+= subq_lex->between_count;
+  parent_lex->cond_count+= subq_lex->cond_count;
   parent_lex->derived_table_count+= subq_lex->derived_table_count;
   parent_lex->materialized_table_count+= subq_lex->materialized_table_count;
   parent_lex->partitioned_table_count+= subq_lex->partitioned_table_count;

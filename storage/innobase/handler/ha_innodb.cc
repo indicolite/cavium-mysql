@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2000, 2014, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2000, 2015, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 Copyright (c) 2012, Facebook Inc.
@@ -482,7 +482,8 @@ ib_cb_t innodb_api_cb[] = {
 	(ib_cb_t) ib_get_idx_field_name,
 	(ib_cb_t) ib_trx_get_start_time,
 	(ib_cb_t) ib_cfg_bk_commit_interval,
-	(ib_cb_t) ib_cursor_stmt_begin
+	(ib_cb_t) ib_cursor_stmt_begin,
+	(ib_cb_t) ib_trx_read_only
 };
 
 /*************************************************************//**
@@ -2694,19 +2695,6 @@ trx_is_strict(
 	trx_t*	trx)	/*!< in: transaction */
 {
 	return(trx && trx->mysql_thd && THDVAR(trx->mysql_thd, strict_mode));
-}
-
-/**********************************************************************//**
-Determines if the current MySQL thread is running in strict mode.
-If thd==NULL, THDVAR returns the global value of innodb-strict-mode.
-@return	TRUE if strict */
-UNIV_INLINE
-ibool
-thd_is_strict(
-/*==========*/
-	THD*	thd)	/*!< in: MySQL thread descriptor */
-{
-	return(THDVAR(thd, strict_mode));
 }
 
 /**************************************************************//**
@@ -6507,7 +6495,7 @@ ha_innobase::write_row(
 
 	DBUG_ENTER("ha_innobase::write_row");
 
-	if (srv_read_only_mode) {
+	if (high_level_read_only) {
 		ib_senderrf(ha_thd(), IB_LOG_LEVEL_WARN, ER_READ_ONLY_MODE);
 		DBUG_RETURN(HA_ERR_TABLE_READONLY);
 	} else if (prebuilt->trx != trx) {
@@ -7051,7 +7039,7 @@ ha_innobase::update_row(
 
 	ut_a(prebuilt->trx == trx);
 
-	if (srv_read_only_mode) {
+	if (high_level_read_only) {
 		ib_senderrf(ha_thd(), IB_LOG_LEVEL_WARN, ER_READ_ONLY_MODE);
 		DBUG_RETURN(HA_ERR_TABLE_READONLY);
 	} else if (!trx_is_started(trx)) {
@@ -7183,7 +7171,7 @@ ha_innobase::delete_row(
 
 	ut_a(prebuilt->trx == trx);
 
-	if (srv_read_only_mode) {
+	if (high_level_read_only) {
 		ib_senderrf(ha_thd(), IB_LOG_LEVEL_WARN, ER_READ_ONLY_MODE);
 		DBUG_RETURN(HA_ERR_TABLE_READONLY);
 	} else if (!trx_is_started(trx)) {
@@ -8518,13 +8506,23 @@ create_table_def(
 
 	/* MySQL does the name length check. But we do additional check
 	on the name length here */
-	if (strlen(table_name) > MAX_FULL_NAME_LEN) {
+	const size_t	table_name_len = strlen(table_name);
+	if (table_name_len > MAX_FULL_NAME_LEN) {
 		push_warning_printf(
 			thd, Sql_condition::WARN_LEVEL_WARN,
 			ER_TABLE_NAME,
 			"InnoDB: Table Name or Database Name is too long");
 
 		DBUG_RETURN(ER_TABLE_NAME);
+	}
+
+	if (table_name[table_name_len - 1] == '/') {
+		push_warning_printf(
+			thd, Sql_condition::WARN_LEVEL_WARN,
+			ER_TABLE_NAME,
+			"InnoDB: Table name is empty");
+
+		DBUG_RETURN(ER_WRONG_TABLE_NAME);
 	}
 
 	n_cols = form->s->fields;
@@ -9501,7 +9499,7 @@ ha_innobase::create(
 
 	if (form->s->fields > REC_MAX_N_USER_FIELDS) {
 		DBUG_RETURN(HA_ERR_TOO_MANY_FIELDS);
-	} else if (srv_read_only_mode) {
+	} else if (high_level_read_only) {
 		DBUG_RETURN(HA_ERR_INNODB_READ_ONLY);
 	}
 
@@ -9831,7 +9829,7 @@ ha_innobase::discard_or_import_tablespace(
 	ut_a(prebuilt->trx->magic_n == TRX_MAGIC_N);
 	ut_a(prebuilt->trx == thd_to_trx(ha_thd()));
 
-	if (srv_read_only_mode) {
+	if (high_level_read_only) {
 		DBUG_RETURN(HA_ERR_TABLE_READONLY);
 	}
 
@@ -9925,7 +9923,7 @@ ha_innobase::truncate()
 
 	DBUG_ENTER("ha_innobase::truncate");
 
-	if (srv_read_only_mode) {
+	if (high_level_read_only) {
 		DBUG_RETURN(HA_ERR_TABLE_READONLY);
 	}
 
@@ -10276,7 +10274,7 @@ ha_innobase::rename_table(
 
 	DBUG_ENTER("ha_innobase::rename_table");
 
-	if (srv_read_only_mode) {
+	if (high_level_read_only) {
 		ib_senderrf(thd, IB_LOG_LEVEL_WARN, ER_READ_ONLY_MODE);
 		DBUG_RETURN(HA_ERR_TABLE_READONLY);
 	}
@@ -10521,6 +10519,13 @@ ha_innobase::estimate_rows_upper_bound()
 		/ dict_index_calc_min_rec_len(index);
 
 	prebuilt->trx->op_info = "";
+
+        /* Set num_rows less than MERGEBUFF to simulate the case where we do
+        not have enough space to merge the externally sorted file blocks. */
+        DBUG_EXECUTE_IF("set_num_rows_lt_MERGEBUFF",
+                        estimate = 2;
+                        DBUG_SET("-d,set_num_rows_lt_MERGEBUFF");
+                       );
 
 	DBUG_RETURN((ha_rows) estimate);
 }
@@ -10792,7 +10797,6 @@ ha_innobase::info_low(
 	dict_table_t*	ib_table;
 	ha_rows		rec_per_key;
 	ib_uint64_t	n_rows;
-	char		path[FN_REFLEN];
 	os_file_stat_t	stat_info;
 
 	DBUG_ENTER("info");
@@ -10850,17 +10854,6 @@ ha_innobase::info_low(
 				"returning various info to MySQL";
 		}
 
-		my_snprintf(path, sizeof(path), "%s/%s%s",
-			    mysql_data_home, ib_table->name, reg_ext);
-
-		unpack_filename(path,path);
-
-		/* Note that we do not know the access time of the table,
-		nor the CHECK TABLE time, nor the UPDATE or INSERT time. */
-
-		if (os_file_get_status(path, &stat_info, false) == DB_SUCCESS) {
-			stats.create_time = (ulong) stat_info.ctime;
-		}
 	}
 
 	if (flag & HA_STATUS_VARIABLE) {
@@ -10995,6 +10988,7 @@ ha_innobase::info_low(
 
 	if (flag & HA_STATUS_CONST) {
 		ulong	i;
+		char	path[FN_REFLEN];
 		/* Verify the number of index in InnoDB and MySQL
 		matches up. If prebuilt->clust_index_was_generated
 		holds, InnoDB defines GEN_CLUST_INDEX internally */
@@ -11117,6 +11111,20 @@ ha_innobase::info_low(
 
 		if (!(flag & HA_STATUS_NO_LOCK)) {
 			dict_table_stats_unlock(ib_table, RW_S_LATCH);
+		}
+
+		my_snprintf(path, sizeof(path), "%s/%s%s",
+			    mysql_data_home,
+			    table->s->normalized_path.str,
+			    reg_ext);
+
+		unpack_filename(path,path);
+
+		/* Note that we do not know the access time of the table,
+		nor the CHECK TABLE time, nor the UPDATE or INSERT time. */
+
+		if (os_file_get_status(path, &stat_info, false) == DB_SUCCESS) {
+			stats.create_time = (ulong) stat_info.ctime;
 		}
 	}
 
@@ -14280,6 +14288,12 @@ innodb_internal_table_validate(
 		}
 
 		dict_table_close(user_table, FALSE, TRUE);
+
+		DBUG_EXECUTE_IF("innodb_evict_autoinc_table",
+			mutex_enter(&dict_sys->mutex);
+			dict_table_remove_from_cache_low(user_table, TRUE);
+			mutex_exit(&dict_sys->mutex);
+		);
 	}
 
 	return(ret);
@@ -16293,6 +16307,13 @@ static MYSQL_SYSVAR_BOOL(use_native_aio, srv_use_native_aio,
   "Use native AIO if supported on this platform.",
   NULL, NULL, TRUE);
 
+#ifdef HAVE_LIBNUMA
+static MYSQL_SYSVAR_BOOL(numa_interleave, srv_numa_interleave,
+  PLUGIN_VAR_NOCMDARG | PLUGIN_VAR_READONLY,
+  "Use NUMA interleave memory policy to allocate InnoDB buffer pool.",
+  NULL, NULL, FALSE);
+#endif // HAVE_LIBNUMA
+
 static MYSQL_SYSVAR_BOOL(api_enable_binlog, ib_binlog_enabled,
   PLUGIN_VAR_NOCMDARG | PLUGIN_VAR_READONLY,
   "Enable binlog for applications direct access InnoDB through InnoDB APIs",
@@ -16571,6 +16592,9 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(version),
   MYSQL_SYSVAR(use_sys_malloc),
   MYSQL_SYSVAR(use_native_aio),
+#ifdef HAVE_LIBNUMA
+  MYSQL_SYSVAR(numa_interleave),
+#endif // HAVE_LIBNUMA
   MYSQL_SYSVAR(change_buffering),
   MYSQL_SYSVAR(change_buffer_max_size),
 #if defined UNIV_DEBUG || defined UNIV_IBUF_DEBUG

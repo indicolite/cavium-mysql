@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -31,11 +31,9 @@
 #include "ha_partition.h"
 
 
-partition_info *partition_info::get_clone()
+partition_info *partition_info::get_clone(bool reset /* = false */)
 {
   DBUG_ENTER("partition_info::get_clone");
-  if (!this)
-    DBUG_RETURN(NULL);
   List_iterator<partition_element> part_it(partitions);
   partition_element *part;
   partition_info *clone= new partition_info();
@@ -49,6 +47,7 @@ partition_info *partition_info::get_clone()
   memset(&(clone->lock_partitions), 0, sizeof(clone->lock_partitions));
   clone->bitmaps_are_initialized= FALSE;
   clone->partitions.empty();
+  clone->temp_partitions.empty();
 
   while ((part= (part_it++)))
   {
@@ -61,6 +60,26 @@ partition_info *partition_info::get_clone()
       DBUG_RETURN(NULL);
     }
     memcpy(part_clone, part, sizeof(partition_element));
+
+    /*
+      Mark that RANGE and LIST values needs to be fixed so that we don't
+      use old values. fix_column_value_functions would evaluate the values
+      from Item expression.
+    */
+    if (reset)
+    {
+      clone->defined_max_value = false;
+      List_iterator<part_elem_value> list_it(part_clone->list_val_list);
+      while (part_elem_value *list_value= list_it++)
+      {
+        part_column_list_val *col_val= list_value->col_val_array;
+        for (uint i= 0; i < num_columns; col_val++, i++)
+        {
+          col_val->fixed= 0;
+        }
+      }
+    }
+
     part_clone->subpartitions.empty();
     while ((subpart= (subpart_it++)))
     {
@@ -78,6 +97,18 @@ partition_info *partition_info::get_clone()
   DBUG_RETURN(clone);
 }
 
+partition_info *partition_info::get_full_clone()
+{
+  partition_info *clone;
+  DBUG_ENTER("partition_info::get_full_clone");
+  clone= get_clone();
+  if (!clone)
+    DBUG_RETURN(NULL);
+  memcpy(&clone->read_partitions, &read_partitions, sizeof(read_partitions));
+  memcpy(&clone->lock_partitions, &lock_partitions, sizeof(lock_partitions));
+  clone->bitmaps_are_initialized= bitmaps_are_initialized;
+  DBUG_RETURN(clone);
+}
 
 /**
   Mark named [sub]partition to be used/locked.
@@ -1593,15 +1624,22 @@ bool partition_info::check_partition_info(THD *thd, handlerton **eng_type,
   {
     int err= 0;
 
+    /* Check for partition expression. */
     if (!list_of_part_fields)
     {
       DBUG_ASSERT(part_expr);
       err= part_expr->walk(&Item::check_partition_func_processor, 0,
                            NULL);
-      if (!err && is_sub_partitioned() && !list_of_subpart_fields)
-        err= subpart_expr->walk(&Item::check_partition_func_processor, 0,
-                                NULL);
     }
+
+    /* Check for sub partition expression. */
+    if (!err && is_sub_partitioned() && !list_of_subpart_fields)
+    {
+      DBUG_ASSERT(subpart_expr);
+      err= subpart_expr->walk(&Item::check_partition_func_processor, 0,
+                              NULL);
+    }
+
     if (err)
     {
       my_error(ER_PARTITION_FUNCTION_IS_NOT_ALLOWED, MYF(0));
