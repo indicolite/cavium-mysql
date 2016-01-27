@@ -301,4 +301,45 @@ C_MODE_END
 #  define MY_PAUSE() ((void) 0)
 #endif
 
+/*
+  POWER-specific macros to relax CPU threads to give more core resources to
+  other threads executing in the core.
+*/
+#if defined(HAVE_HMT_PRIORITY_INSTRUCTION)
+#  define MY_LOW_PRIORITY_CPU() __asm__ __volatile__ ("or 1,1,1")
+#  define MY_RESUME_PRIORITY_CPU() __asm__ __volatile__ ("or 2,2,2")
+#else
+#  define MY_LOW_PRIORITY_CPU() ((void)0)
+#  define MY_RESUME_PRIORITY_CPU() ((void)0)
+#endif
+
+/*
+  my_yield_processor (equivalent of x86 PAUSE instruction) should be used to
+  improve performance on hyperthreaded CPUs. Intel recommends to use it in spin
+  loops also on non-HT machines to reduce power consumption (see e.g
+  http://softwarecommunity.intel.com/articles/eng/2004.htm)
+
+  Running benchmarks for spinlocks implemented with InterlockedCompareExchange
+  and YieldProcessor shows that much better performance is achieved by calling
+  YieldProcessor in a loop - that is, yielding longer. On Intel boxes setting
+  loop count in the range 200-300 brought best results.
+ */
+#define MY_YIELD_LOOPS 200
+
+static inline int my_yield_processor()
+{
+  int i;
+
+  MY_LOW_PRIORITY_CPU();
+
+  for (i= 0; i < MY_YIELD_LOOPS; i++)
+  {
+    MY_COMPILER_BARRIER();
+    MY_PAUSE();
+  }
+
+  MY_RESUME_PRIORITY_CPU();
+
+  return 1;
+}
 #endif /* MY_ATOMIC_INCLUDED */
