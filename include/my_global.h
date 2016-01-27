@@ -1211,6 +1211,10 @@ typedef struct
   CMake using getconf
 */
 #if !defined(CPU_LEVEL1_DCACHE_LINESIZE) || CPU_LEVEL1_DCACHE_LINESIZE == 0
+  #if CPU_LEVEL1_DCACHE_LINESIZE == 0
+    #undef CPU_LEVEL1_DCACHE_LINESIZE
+  #endif
+
   #if defined(__powerpc__) || defined(__aarch64__)
     #define CPU_LEVEL1_DCACHE_LINESIZE 128
   #else
