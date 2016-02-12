@@ -396,25 +396,17 @@ Runs an idle loop on CPU. The argument gives the desired delay
 in microseconds on 100 MHz Pentium + Visual C++.
 @return	dummy value */
 UNIV_INTERN
-ulint
+void
 ut_delay(
 /*=====*/
 	ulint	delay)	/*!< in: delay in microseconds on 100 MHz Pentium */
 {
-	ulint	i, j;
-
-	j = 0;
+	ulint	i;
 
 	for (i = 0; i < delay * 50; i++) {
-		j += i;
+		UT_COMPILER_BARRIER();
 		UT_RELAX_CPU();
 	}
-
-	if (ut_always_false) {
-		ut_always_false = (ibool) j;
-	}
-
-	return(j);
 }
 #endif /* !UNIV_HOTBACKUP */
 

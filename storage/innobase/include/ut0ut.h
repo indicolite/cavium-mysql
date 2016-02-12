@@ -86,6 +86,12 @@ private:
 #  error MY_RESUME_PRIORITY_CPU() is undefined!
 #endif
 
+# ifdef MY_COMPILER_BARRIER
+#  define UT_COMPILER_BARRIER() MY_COMPILER_BARRIER()
+# else
+#  error MY_COMPILER_BARRIER() is undefined!
+# endif
+
 /*********************************************************************//**
 Delays execution for at most max_wait_us microseconds or returns earlier
 if cond becomes true.
@@ -326,7 +332,7 @@ Runs an idle loop on CPU. The argument gives the desired delay
 in microseconds on 100 MHz Pentium + Visual C++.
 @return	dummy value */
 UNIV_INTERN
-ulint
+void
 ut_delay(
 /*=====*/
 	ulint	delay);	/*!< in: delay in microseconds on 100 MHz Pentium */
