@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2015, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -47,9 +47,6 @@ Created 5/11/1994 Heikki Tuuri
 #endif /* !UNIV_HOTBACKUP */
 
 #include "log.h"
-
-/** A constant to prevent the compiler from optimizing ut_delay() away. */
-ibool	ut_always_false	= FALSE;
 
 #ifdef _WIN32
 /*****************************************************************//**
@@ -369,29 +366,21 @@ ut_get_year_month_day(
 Runs an idle loop on CPU. The argument gives the desired delay
 in microseconds on 100 MHz Pentium + Visual C++.
 @return dummy value */
-ulint
+void
 ut_delay(
 /*=====*/
 	ulint	delay)	/*!< in: delay in microseconds on 100 MHz Pentium */
 {
-	ulint	i, j;
+	ulint	i;
 
 	UT_LOW_PRIORITY_CPU();
 
-	j = 0;
-
 	for (i = 0; i < delay * 50; i++) {
-		j += i;
+		UT_COMPILER_BARRIER();
 		UT_RELAX_CPU();
 	}
 
-	if (ut_always_false) {
-		ut_always_false = (ibool) j;
-	}
-
 	UT_RESUME_PRIORITY_CPU();
-
-	return(j);
 }
 #endif /* UNIV_HOTBACKUP */
 
@@ -819,6 +808,10 @@ ut_strerr(
 		return("Punch hole not supported by the file system");
 	case DB_IO_NO_PUNCH_HOLE_TABLESPACE:
 		return("Punch hole not supported by the tablespace");
+	case DB_IO_NO_ENCRYPT_TABLESPACE:
+		return("Page encryption not supported by the tablespace");
+	case DB_IO_DECRYPT_FAIL:
+		return("Page decryption failed after reading from disk");
 	case DB_IO_PARTIAL_FAILED:
 		return("Partial IO failed");
 	case DB_FORCED_ABORT:
