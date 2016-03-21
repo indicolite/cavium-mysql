@@ -131,3 +131,8 @@ override_dh_installinit:
 	dh_apparmor -pmysql-community-server --profile-name=usr.sbin.mysqld
 	dh_installinit --name=mysql -- defaults 19 21
 	touch $@
+
+# Ignore missing dependencies. Otherwise dh_shlibdeps complains about missing
+# dependency information for /usr/local/gcc5-lto/lib64/libgcc_s.so.1
+override_dh_shlibdeps:
+    dh_shlibdeps --dpkg-shlibdeps-params=--ignore-missing-info
