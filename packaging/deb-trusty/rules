@@ -46,7 +46,9 @@ override_dh_auto_configure:
 		-DWITH_EXTRA_CHARSETS=all \
 		-DWITH_INNODB_MEMCACHED=1 \
 		-DWITH_MECAB=system \
+		-DWITH_BOOST=boost \
 		-DDOWNLOAD_BOOST=1 \
+		-DWITH_LIBEVENT=bundled \
 		-DCOMPILATION_COMMENT="MySQL Community Server (GPL)" \
 		-DINSTALL_LAYOUT=DEB
 
