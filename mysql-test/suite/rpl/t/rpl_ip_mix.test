@@ -7,7 +7,7 @@
 
 # restart master with --bind-address=::
 --connect (master,localhost,root,,test,$MASTER_MYPORT)
---let $restart_parameters = "--bind-address=::"
+--let $restart_parameters = "restart: --bind-address=::"
 --source include/restart_mysqld.inc
 --disconnect master
 

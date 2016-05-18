@@ -1,3 +1,4 @@
+# restart: --bind-address=::
 call mtr.add_suppression("192.0.2.4");
 flush status;
 flush hosts;

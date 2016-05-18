@@ -1,3 +1,4 @@
+# restart: --bind-address=::
 #################### IP: ::1 ###########################
 connect (master,::1,root,,test,MASTER_MYPORT);
 connect (slave,127.0.0.1,root,,test,SLAVE_MYPORT);

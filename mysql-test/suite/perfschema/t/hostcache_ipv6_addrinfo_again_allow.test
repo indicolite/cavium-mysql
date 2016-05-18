@@ -12,7 +12,7 @@
 --source include/have_perfschema.inc
 
 # Start the server with --bind-address=::
---let $restart_parameters = "--bind-address=::"
+--let $restart_parameters = "restart: --bind-address=::"
 --source include/restart_mysqld.inc
 
 # [Warning] Host name 'santa.claus.ipv6.example.com' could not be resolved:

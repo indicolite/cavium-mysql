@@ -19,7 +19,7 @@ disconnect checkcon123456789;
 
 # restart slave with --bind-address=::
 --connect (slave,localhost,root,,test,$SLAVE_MYPORT)
---let $restart_parameters = "--bind-address=::"
+--let $restart_parameters = "restart: --bind-address=::"
 --source include/restart_mysqld.inc
 --disconnect slave
 

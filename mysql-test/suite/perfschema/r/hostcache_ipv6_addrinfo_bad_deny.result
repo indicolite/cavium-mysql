@@ -1,3 +1,4 @@
+# restart: --bind-address=::
 call mtr.add_suppression("santa.claus.ipv6.example.com");
 flush status;
 flush hosts;
