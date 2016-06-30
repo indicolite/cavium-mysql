@@ -418,18 +418,13 @@ void safe_mutex_end(FILE *file MY_ATTRIBUTE((unused)))
 #undef pthread_cond_wait
 #undef pthread_cond_timedwait
 
-ulong mutex_delay(ulong delayloops)
+static void mutex_delay(ulong delayloops)
 {
   ulong	i;
-  volatile ulong j;
-
-  j = 0;
 
   for (i = 0; i < delayloops * 50; i++)
-    j += i;
-
-  return(j); 
-}	
+    MY_COMPILER_BARRIER();
+}
 
 #define MY_PTHREAD_FASTMUTEX_SPINS 8
 #define MY_PTHREAD_FASTMUTEX_DELAY 4
