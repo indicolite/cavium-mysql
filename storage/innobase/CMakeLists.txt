@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -167,5 +167,16 @@ IF(CMAKE_SYSTEM_NAME MATCHES "SunOS" AND CMAKE_SYSTEM_PROCESSOR MATCHES "i386")
       ut/ut0crc32.cc
       COMPILE_FLAGS "-Wa,-nH"
     )
+  ENDIF()
+ENDIF()
+
+# A GCC bug causes crash when compiling these files on ARM64 with -O1+
+# Unlike upstream MySQL, we simply require GCC >= 5.2 rather than build with -O0
+IF(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+  EXECUTE_PROCESS(COMMAND ${CMAKE_C_COMPILER} -dumpversion
+                  OUTPUT_VARIABLE GCC_VERSION)
+  IF(GCC_VERSION VERSION_LESS 5.2)
+    MESSAGE(FATAL_ERROR
+      "GCC 5.2 or newer is required to build InnoDB on AArch64!")
   ENDIF()
 ENDIF()
