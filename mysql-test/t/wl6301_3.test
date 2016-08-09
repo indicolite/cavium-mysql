@@ -12,7 +12,7 @@
 --source include/have_ipv6.inc
 
 # Start the server with --bind-address=::ffff:127.0.0.1
---let $restart_parameters = "--skip-name-resolve --bind-address=::ffff:127.0.0.1"
+--let $restart_parameters = "restart: --skip-name-resolve --bind-address=::ffff:127.0.0.1"
 --source include/restart_mysqld.inc
 
 # The box should support IPv4-mapped addresses
