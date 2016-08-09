@@ -1,3 +1,5 @@
+call mtr.add_suppression("Function 'test_plugin_server' already exists");
+call mtr.add_suppression("Couldn't load plugin named 'test_plugin_server'");
 # restart: --bind-address=::
 flush status;
 flush hosts;

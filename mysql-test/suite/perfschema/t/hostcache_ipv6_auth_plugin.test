@@ -14,6 +14,9 @@
 --source include/have_perfschema.inc
 --source include/have_plugin_auth.inc
 
+call mtr.add_suppression("Function 'test_plugin_server' already exists");
+call mtr.add_suppression("Couldn't load plugin named 'test_plugin_server'");
+
 # Start the server with --bind-address=::
 --let $restart_parameters = "restart: --bind-address=::"
 --source include/restart_mysqld.inc
