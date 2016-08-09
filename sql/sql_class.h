@@ -214,7 +214,7 @@ public:
 
 
 #if defined(__powerpc__) || defined(__aarch64__)
-#define TC_LOG_PAGE_SIZE   65535
+#define TC_LOG_PAGE_SIZE   65536
 #else
 #define TC_LOG_PAGE_SIZE   8192
 #endif
