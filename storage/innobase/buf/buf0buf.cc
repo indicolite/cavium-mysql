@@ -3853,8 +3853,7 @@ buf_block_from_ahi(const byte* ptr)
 	ut_ad(buf_chunk_map_ref == buf_chunk_map_reg);
 	ut_ad(!buf_pool_resizing);
 
-	buf_chunk_t*		chunk;
-
+	buf_chunk_t*	chunk;
 	it = chunk_map->upper_bound(ptr);
 
 	ut_a(it != chunk_map->begin());
