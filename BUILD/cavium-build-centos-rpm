@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -eu
+
+if [ -z "${TOOLCHAIN_ROOT:-}" ]
+then
+    echo "Please set TOOLCHAIN_ROOT. It is recommended to use the Cavium toolchain rather than the native one"
+    exit 1
+fi
+
+yum install rpm-build redhat-rpm-config yum-utils cmake perl time libaio-devel \
+    mecab-devel ncurses-devl numactl-devel openssl-devel zlib-devel systemd \
+    pkgconfig
+
+export PATH=${TOOLCHAIN_ROOT}/bin
+
+rpmbuild -ba packaging/rpm-oel/mysql.spec

@@ -359,13 +359,15 @@ fi
 (
   pushd mysql-%{compatver}
   mkdir build && pushd build
+  # Workaround for cases when GCC being used is newer than the native one
+  LDFLAGS="-static-libstdc++" \
   cmake .. \
            -DBUILD_CONFIG=mysql_release \
            -DINSTALL_LAYOUT=RPM \
            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
            -DCMAKE_C_FLAGS="%{optflags}" \
            -DCMAKE_CXX_FLAGS="%{optflags}" \
-           -DWITH_INNODB_MEMCACHED=1 \
+           -DWITH_INNODB_MEMCACHED=0 \
            -DINSTALL_LIBDIR="%{_lib}/mysql" \
            -DINSTALL_PLUGINDIR="%{_lib}/mysql/plugin" \
            -DINSTALL_SQLBENCHDIR=share \
@@ -387,6 +389,8 @@ mkdir debug
   cd debug
   # Attempt to remove any optimisation flags from the debug build
   optflags=$(echo "%{optflags}" | sed -e 's/-O2 / /' -e 's/-Wp,-D_FORTIFY_SOURCE=2/ /')
+  # Workaround for cases when GCC being used is newer than the native one
+  LDFLAGS="-static-libstdc++" \
   cmake ../%{src_dir} \
            -DBUILD_CONFIG=mysql_release \
            -DINSTALL_LAYOUT=RPM \
@@ -417,6 +421,8 @@ mkdir debug
 mkdir release
 (
   cd release
+  # Workaround for cases when GCC being used is newer than the native one
+  LDFLAGS="-static-libstdc++" \
   cmake ../%{src_dir} \
            -DBUILD_CONFIG=mysql_release \
            -DINSTALL_LAYOUT=RPM \
@@ -840,6 +846,9 @@ datadir=$(/usr/bin/my_print_defaults server mysqld | grep '^--datadir=' | sed -n
 %attr(755, root, root) %{_libdir}/mysql/libmysqld.so
 
 %changelog
+* Fri Oct 21 2016 Aleksei Kopytov <akopytov@gmail.com> - 5.7.15-1
+- Initial Cavium release with AArch64-specific fixes.
+
 * Tue Jul 05 2016 Balasubramanian Kandasamy <balasubramanian.kandasamy@oracle.com> - 5.7.14-1
 - Updated compatver to 5.6.31
 - Remove mysql_config from client subpackage
