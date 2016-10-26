@@ -37,7 +37,11 @@ Created 5/11/1994 Heikki Tuuri
 /*@}*/
 
 /** Seed value of ut_rnd_gen_ulint(). */
+#if defined(__x86_64__) || defined(__aarch64__)
+__thread UNIV_INTERN ulint	ut_rnd_ulint_counter = 65654363;
+#else
 UNIV_INTERN ulint	ut_rnd_ulint_counter = 65654363;
+#endif
 
 /***********************************************************//**
 Looks for a prime number slightly greater than the given argument.
