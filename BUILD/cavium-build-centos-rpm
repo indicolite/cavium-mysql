@@ -8,7 +8,7 @@ then
     exit 1
 fi
 
-yum install rpm-build redhat-rpm-config yum-utils cmake perl time libaio-devel \
+sudo yum install rpm-build redhat-rpm-config yum-utils cmake perl time libaio-devel \
     mecab-devel ncurses-devl numactl-devel openssl-devel zlib-devel systemd \
     pkgconfig
 
