@@ -1,0 +1,21 @@
+#!/bin/bash
+
+set -eu
+
+if [ -z "${TOOLCHAIN_ROOT:-}" ]
+then
+    echo "Please set TOOLCHAIN_ROOT. It is recommended to use the Cavium toolchain rather than the native one"
+    exit 1
+fi
+
+sudo apt-get build-dep mysql-server-5.7
+sudo apt-get install build-essential fakeroot devscripts
+
+export PATH=${TOOLCHAIN_ROOT}/bin
+export MYSQL_BUILD_PATH=$PATH
+export DEB_BUILD_OPTIONS="parallel=96"
+export DEBUILD_DPKG_BUILDPACKAGE_OPTS="-us -uc -I -i --no-lintian"
+
+ln -sf packaging/cavium-ubuntu debian
+
+gbp buildpackage --git-ignore-branch --git-no-pristine-tar  --git-upstream-tree=branch --git-upstream-branch=5.7
